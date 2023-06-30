@@ -4,6 +4,10 @@ use std::io::Write;
 mod lexer;
 mod parser;
 
+pub fn do_work() -> bool {
+    todo!("implement later");
+}
+
 fn main() -> io::Result<()> {
     println!("Hello! This is the Monkey programming language!\n");
 

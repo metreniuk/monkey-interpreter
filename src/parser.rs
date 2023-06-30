@@ -7,24 +7,26 @@ use std::{
 
 use crate::lexer::{Lexer, Token};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Node {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Statement {
     Let(LetStatement),
     Return(ReturnStatement),
     Expression(Expression),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Expression {
     Empty,
     Ident(Token),
     IntegerLiteral(Token),
     BooleanLiteral(Token),
+    Fn(FunctionLiteral),
     Prefix(Box<PrefixExpression>),
     Infix(Box<InfixExpression>),
+    If(Box<IfExpression>),
 }
 
 impl Display for Expression {
@@ -36,7 +38,7 @@ impl Display for Expression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct PrefixExpression {
     operator: Token,
     right: Expression,
@@ -52,7 +54,7 @@ impl Display for PrefixExpression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct InfixExpression {
     operator: Token,
     left: Expression,
@@ -65,28 +67,82 @@ impl Display for InfixExpression {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+struct IfExpression {
+    condition: Expression,
+    consequence: BlockStatement,
+    alternative: BlockStatement,
+}
+
+impl Display for IfExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "if ({}) {{{}}} else {{{}}})",
+            self.condition, self.consequence, self.alternative
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct BlockStatement {
+    statements: Vec<Statement>,
+}
+
+impl Display for BlockStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for stmt in self.statements.iter() {
+            write!(f, "{:?}", stmt)?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for BlockStatement {
+    fn default() -> Self {
+        BlockStatement { statements: vec![] }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct FunctionLiteral {
+    parameters: Vec<Identifier>,
+    body: BlockStatement,
+}
+
+impl Display for FunctionLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "fn(")?;
+        for param in self.parameters.iter() {
+            write!(f, "{:?}", param)?;
+        }
+        write!(f, ") {}", self.body)?;
+        Ok(())
+    }
+}
+
 struct Program {
     statements: Vec<Statement>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct LetStatement {
     name: Identifier,
     value: Expression,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct ReturnStatement {
     return_value: Expression,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Identifier(Token);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct IntegerLiteral(Token);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct BooleanLiteral(Token);
 
 type PrefixParse = fn() -> Expression;
@@ -202,19 +258,31 @@ impl Parser {
         }));
     }
 
+    fn parse_block_statement(&mut self) -> Option<BlockStatement> {
+        let mut stmts = vec![];
+
+        self.next_token();
+
+        while !self.curr_token_is(Token::RBrace) && !self.curr_token_is(Token::Eof) {
+            stmts.push(self.parse_statement()?);
+            self.next_token();
+        }
+
+        Some(BlockStatement { statements: stmts })
+    }
+
     fn parse_expression_statement(&mut self) -> Option<Statement> {
         let expr = self.parse_expression(Precedence::Lowest)?;
 
-        if !self.expect_peek(Token::Semicolon) {
-            return None;
+        if self.peek_token_is(Token::Semicolon) {
+            self.next_token();
         }
 
         Some(Statement::Expression(expr))
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
-        // println!("parse_expression START");
-        let r = match self.parse_prefix_expression() {
+        match self.parse_prefix_expression() {
             Err(token) => {
                 self.no_prefix_parse_error(token);
                 None
@@ -229,9 +297,7 @@ impl Parser {
                 }
                 Some(left)
             }
-        };
-        // println!("parse_expression: {:?}", r);
-        r
+        }
     }
 
     fn parse_prefix_inner(&mut self) -> Result<Box<PrefixExpression>, Token> {
@@ -239,45 +305,89 @@ impl Parser {
 
         self.next_token();
 
-        match self.parse_expression(Precedence::Prefix) {
-            Some(right) => Ok(Box::new(PrefixExpression { operator: t, right })),
-            None => Err(t),
-        }
+        self.parse_expression(Precedence::Prefix)
+            .map(|right| {
+                Box::new(PrefixExpression {
+                    operator: t.clone(),
+                    right,
+                })
+            })
+            .ok_or(t)
     }
 
     fn parse_infix_expression(&mut self, left: Expression) -> Result<Box<InfixExpression>, Token> {
-        // println!("parse_infix_expression START");
         let precedence = self.curr_precedence();
         let t = self.curr_token.clone();
 
         self.next_token();
 
-        let r = match self.parse_expression(precedence) {
-            Some(right) => Ok(Box::new(InfixExpression {
-                operator: t,
-                left,
-                right,
-            })),
-            None => Err(t),
-        };
-        // println!("parse_infix_expression: {:?}", r);
-        r
+        self.parse_expression(precedence)
+            .map(|right| {
+                Box::new(InfixExpression {
+                    operator: t.clone(),
+                    left,
+                    right,
+                })
+            })
+            .ok_or(t)
     }
 
     fn parse_prefix_expression(&mut self) -> Result<Expression, Token> {
-        // println!("parse_prefix_expression START");
-        let r = match self.curr_token.clone() {
+        match self.curr_token.clone() {
             Token::Bang | Token::Minus => self
                 .parse_prefix_inner()
                 .map(|prefix_exp| Expression::Prefix(prefix_exp)),
             Token::Ident(_) => Ok(self.parse_identifier()),
             Token::Int(_) => Ok(self.parse_integer_literal()),
             Token::LParen => self.parse_grouped_expression(),
+            Token::If => self.parse_if_expression(),
+            Token::Function => self.parse_function_literal(),
             Token::True | Token::False => Ok(self.parse_boolean_literal()),
             t => Err(t),
+        }
+    }
+
+    fn parse_if_expression(&mut self) -> Result<Expression, Token> {
+        if !self.expect_peek(Token::LParen) {
+            return Err(self.peek_token.clone());
+        }
+
+        self.next_token(); // pass the if
+
+        let condition = self
+            .parse_expression(Precedence::Lowest)
+            .ok_or(self.curr_token.clone())?;
+
+        if !self.expect_peek(Token::RParen) {
+            return Err(self.peek_token.clone());
+        }
+
+        if !self.expect_peek(Token::LBrace) {
+            return Err(self.peek_token.clone());
+        }
+
+        let consequence = self
+            .parse_block_statement()
+            .ok_or(self.curr_token.clone())?;
+
+        let alternative = if self.peek_token_is(Token::Else) {
+            self.next_token();
+
+            if !self.expect_peek(Token::LBrace) {
+                return Err(self.curr_token.clone());
+            }
+
+            self.parse_block_statement()
+                .ok_or(self.curr_token.clone())?
+        } else {
+            BlockStatement::default()
         };
-        // println!("parse_prefix_expression: {:?}", r);
-        r
+
+        Ok(Expression::If(Box::new(IfExpression {
+            condition,
+            consequence,
+            alternative,
+        })))
     }
 
     fn parse_grouped_expression(&mut self) -> Result<Expression, Token> {
@@ -289,6 +399,44 @@ impl Parser {
             return Err(self.peek_token.clone());
         }
         return exp.map_or(Err(self.curr_token.clone()), |ex| Ok(ex));
+    }
+
+    fn parse_function_literal(&mut self) -> Result<Expression, Token> {
+        self.expect_peek_(Token::LParen)?;
+
+        let parameters = self.parse_function_parameters()?;
+
+        self.expect_peek_(Token::LBrace)?;
+
+        let body = self
+            .parse_block_statement()
+            .ok_or(self.curr_token.clone())?;
+
+        Ok(Expression::Fn(FunctionLiteral { parameters, body }))
+    }
+
+    fn parse_function_parameters(&mut self) -> Result<Vec<Identifier>, Token> {
+        let mut params = vec![];
+
+        if self.peek_token_is(Token::RParen) {
+            self.next_token();
+            return Ok(params);
+        }
+
+        self.next_token();
+
+        while self.peek_token_is(Token::Comma) {
+            self.print_tokens();
+            params.push(Identifier(self.curr_token.clone()));
+            self.next_token();
+            self.next_token();
+        }
+
+        params.push(Identifier(self.curr_token.clone()));
+
+        self.expect_peek_(Token::RParen)?;
+
+        Ok(params)
     }
 
     fn parse_identifier(&self) -> Expression {
@@ -319,7 +467,7 @@ impl Parser {
 
     fn no_prefix_parse_error(&mut self, token: Token) {
         self.errors
-            .push(format!("no prefix parse fn for {token} found"))
+            .push(format!("no prefix parse fn for {} found", token))
     }
 
     fn expect_ident_peek(&mut self) -> bool {
@@ -329,6 +477,25 @@ impl Parser {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn expect_peek_(&mut self, token: Token) -> Result<(), Token> {
+        if self.peek_token == token {
+            self.next_token();
+            Ok(())
+        } else {
+            self.peek_error(token);
+            Err(self.peek_token.clone())
+        }
+    }
+
+    fn expect_curr_(&mut self, token: Token) -> Result<(), Token> {
+        if self.curr_token == token {
+            self.next_token();
+            Ok(())
+        } else {
+            Err(self.peek_token.clone())
         }
     }
 
@@ -344,7 +511,7 @@ impl Parser {
 
     fn peek_error(&mut self, token: Token) {
         let msg = format!(
-            "expected next token to be {}, got {} instead",
+            "expected next token to be {} got {} instead",
             token, self.peek_token
         );
         self.errors.push(msg);
@@ -376,12 +543,28 @@ impl Parser {
             .unwrap_or(&Precedence::Lowest)
             .clone()
     }
+
+    fn print_tokens(&self) {
+        println!(
+            "Current token: {} Peek token: {}",
+            self.curr_token, self.peek_token
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
+
+    fn format_errors(errors: Vec<String>) -> String {
+        errors
+            .iter()
+            .enumerate()
+            .fold(format!(""), |acc, (i, err)| {
+                format!("{}\n{}: {}", acc, i + 1, err)
+            })
+    }
 
     #[test]
     fn test_let() {
@@ -395,7 +578,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert!(program.statements.len() == 3);
@@ -434,7 +617,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert!(program.statements.len() == 3);
@@ -468,7 +651,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 1);
@@ -488,7 +671,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 1);
@@ -509,7 +692,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 2);
@@ -536,7 +719,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 4);
@@ -587,7 +770,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 8);
@@ -626,7 +809,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 2);
@@ -680,7 +863,7 @@ mod tests {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            panic!("Parsing errors: {:?}", p.errors);
+            panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
         assert_eq!(program.statements.len(), 1);
@@ -699,49 +882,133 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_expr_precedence() {
-    //     let inputs = vec![
-    //         "-a * b;
-    //         ((-a) * b);",
-    //         "!-a;
-    //         (!(-a));",
-    //         "a + b + c;
-    //         ((a + b) + c);",
-    //         "a + b - c;
-    //         ((a + b) - c);",
-    //         "a * b * c;
-    //         ((a * b) * c);",
-    //         "a * b / c;
-    //         ((a * b) / c);",
-    //         "a + b / c;
-    //         (a + (b / c));",
-    //         "a + b * c + d / e - f;
-    //         (((a + (b * c)) + (d / e)) - f);",
-    //         "3 + 4; -5 * 5;
-    //         (3 + 4)((-5) * 5);",
-    //         "5 > 4 == 3 < 4;
-    //         ((5 > 4) == (3 < 4));",
-    //         "5 < 4 != 3 > 4;
-    //         ((5 < 4) != (3 > 4));",
-    //         "3 + 4 * 5 == 3 * 1 + 4 * 5;
-    //         ((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));",
-    //         "3 + 4 * 5 == 3 * 1 + 4 * 5;
-    //         ((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));",
-    //     ];
+    #[test]
+    fn test_if_expr() {
+        let input = "
+        if (x < y) { x }
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
 
-    //     for input in inputs.iter() {
-    //         let l = Lexer::new(String::from(*input));
-    //         let mut p = Parser::new(l);
-    //         let program = p.parse_program();
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
 
-    //         if !p.errors.is_empty() {
-    //             panic!("Parsing errors: {:?}", p.errors);
-    //         }
+        assert_eq!(program.statements.len(), 1);
 
-    //         assert_eq!(program.statements.len(), 2);
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::If(Box::new(IfExpression {
+                condition: Expression::Infix(Box::new(InfixExpression {
+                    operator: Token::Lt,
+                    left: Expression::Ident(Token::Ident(String::from("x"))),
+                    right: Expression::Ident(Token::Ident(String::from("y"))),
+                })),
+                consequence: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::Ident(Token::Ident(
+                        String::from("x")
+                    )))]
+                },
+                alternative: BlockStatement { statements: vec![] }
+            })))
+        );
+    }
 
-    //         assert_eq!(program.statements[0], program.statements[1],)
-    //     }
-    // }
+    #[test]
+    fn test_if_else_expr() {
+        let input = "
+        if (x < y) { x } else { y }
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(program.statements.len(), 1);
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::If(Box::new(IfExpression {
+                condition: Expression::Infix(Box::new(InfixExpression {
+                    operator: Token::Lt,
+                    left: Expression::Ident(Token::Ident(String::from("x"))),
+                    right: Expression::Ident(Token::Ident(String::from("y"))),
+                })),
+                consequence: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::Ident(Token::Ident(
+                        String::from("x")
+                    )))]
+                },
+                alternative: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::Ident(Token::Ident(
+                        String::from("y")
+                    )))]
+                },
+            })))
+        );
+    }
+
+    #[test]
+    fn test_fn() {
+        let input = "
+        fn() { 1; };
+        fn(x) { x; };
+        fn(x, y, z) { x + y; }
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(program.statements.len(), 3);
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::Fn(FunctionLiteral {
+                parameters: vec![],
+                body: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::IntegerLiteral(
+                        Token::Int(1)
+                    ))]
+                }
+            }))
+        );
+        assert_eq!(
+            program.statements[1],
+            Statement::Expression(Expression::Fn(FunctionLiteral {
+                parameters: vec![Identifier(Token::Ident(String::from("x")))],
+                body: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::Ident(Token::Ident(
+                        String::from("x")
+                    )))]
+                }
+            }))
+        );
+        assert_eq!(
+            program.statements[2],
+            Statement::Expression(Expression::Fn(FunctionLiteral {
+                parameters: vec![
+                    Identifier(Token::Ident(String::from("x"))),
+                    Identifier(Token::Ident(String::from("y"))),
+                    Identifier(Token::Ident(String::from("z"))),
+                ],
+                body: BlockStatement {
+                    statements: vec![Statement::Expression(Expression::Infix(Box::new(
+                        InfixExpression {
+                            operator: Token::Plus,
+                            left: Expression::Ident(Token::Ident(String::from("x"))),
+                            right: Expression::Ident(Token::Ident(String::from("y"))),
+                        }
+                    )))]
+                }
+            }))
+        );
+    }
 }
