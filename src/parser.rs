@@ -246,6 +246,7 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
+        self.print_tokens();
         match self.curr_token {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
@@ -260,30 +261,29 @@ impl Parser {
 
         let name = Identifier(self.curr_token.clone());
 
-        if !self.expect_peek(Token::Assign) {
-            return None;
-        }
+        self.expect_peek_(Token::Assign).ok().unwrap();
 
-        while !self.curr_token_is(Token::Semicolon) {
+        self.next_token();
+
+        let exp = self.parse_expression(Precedence::Lowest)?;
+
+        if self.peek_token_is(Token::Semicolon) {
             self.next_token();
         }
 
-        return Some(Statement::Let(LetStatement {
-            name,
-            value: Expression::Empty,
-        }));
+        return Some(Statement::Let(LetStatement { name, value: exp }));
     }
 
     fn parse_return_statement(&mut self) -> Option<Statement> {
         self.next_token();
 
-        while !self.curr_token_is(Token::Semicolon) {
+        let exp = self.parse_expression(Precedence::Lowest)?;
+
+        if self.peek_token_is(Token::Semicolon) {
             self.next_token();
         }
 
-        return Some(Statement::Return(ReturnStatement {
-            return_value: Expression::Empty,
-        }));
+        return Some(Statement::Return(ReturnStatement { return_value: exp }));
     }
 
     fn parse_block_statement(&mut self) -> Option<BlockStatement> {
@@ -646,7 +646,7 @@ mod tests {
     fn test_let() {
         let input = "
         let x = 5;
-        let y = 10;
+        let y = 10 + 5;
         let foobar = 838383;
         ";
         let l = Lexer::new(String::from(input));
@@ -662,21 +662,25 @@ mod tests {
             program.statements[0],
             Statement::Let(LetStatement {
                 name: Identifier(Token::Ident(String::from("x"))),
-                value: Expression::Empty
+                value: Expression::IntegerLiteral(Token::Int(5))
             })
         );
         assert_eq!(
             program.statements[1],
             Statement::Let(LetStatement {
                 name: Identifier(Token::Ident(String::from("y"))),
-                value: Expression::Empty
+                value: Expression::Operation(Box::new(InfixExpression {
+                    operator: Token::Plus,
+                    left: Expression::IntegerLiteral(Token::Int(10)),
+                    right: Expression::IntegerLiteral(Token::Int(5))
+                }))
             })
         );
         assert_eq!(
             program.statements[2],
             Statement::Let(LetStatement {
                 name: Identifier(Token::Ident(String::from("foobar"))),
-                value: Expression::Empty
+                value: Expression::IntegerLiteral(Token::Int(838383))
             })
         );
     }
@@ -700,19 +704,19 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::Return(ReturnStatement {
-                return_value: Expression::Empty
+                return_value: Expression::IntegerLiteral(Token::Int(5))
             })
         );
         assert_eq!(
-            program.statements[0],
+            program.statements[1],
             Statement::Return(ReturnStatement {
-                return_value: Expression::Empty
+                return_value: Expression::IntegerLiteral(Token::Int(10))
             })
         );
         assert_eq!(
-            program.statements[0],
+            program.statements[2],
             Statement::Return(ReturnStatement {
-                return_value: Expression::Empty
+                return_value: Expression::IntegerLiteral(Token::Int(993322))
             })
         );
     }
