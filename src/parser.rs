@@ -25,8 +25,9 @@ enum Expression {
     BooleanLiteral(Token),
     Fn(FunctionLiteral),
     Prefix(Box<PrefixExpression>),
-    Infix(Box<InfixExpression>),
+    Operation(Box<InfixExpression>),
     If(Box<IfExpression>),
+    Call(Box<CallExpression>),
 }
 
 impl Display for Expression {
@@ -81,6 +82,32 @@ impl Display for IfExpression {
             "if ({}) {{{}}} else {{{}}})",
             self.condition, self.consequence, self.alternative
         )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct CallExpression {
+    function: Expression,
+    arguments: Vec<Expression>,
+}
+
+impl Display for CallExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.function.clone() {
+            Expression::Ident(t) => write!(f, "{}(", t)?,
+            Expression::Fn(fun) => write!(f, "{}(", fun)?,
+            _ => panic!("function name should be identifier or function"),
+        }
+
+        for (i, arg) in self.arguments.iter().enumerate() {
+            if i == self.arguments.len() - 1 {
+                write!(f, "{})", arg)?
+            } else {
+                write!(f, "{},", arg)?
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -193,6 +220,7 @@ impl Parser {
         hm.insert(Token::Minus, Precedence::Sum);
         hm.insert(Token::Slash, Precedence::Product);
         hm.insert(Token::Asterisk, Precedence::Product);
+        hm.insert(Token::LParen, Precedence::Call);
 
         hm
     }
@@ -288,12 +316,14 @@ impl Parser {
                 None
             }
             Ok(mut left) => {
-                while !self.peek_token_is(Token::Semicolon)
-                    && precedence < self.peek_precedence()
-                    && self.has_peek_infix_parse()
-                {
+                while !self.peek_token_is(Token::Semicolon) && precedence < self.peek_precedence() {
+                    let t = self.has_peek_infix_parse()?;
                     self.next_token();
-                    left = Expression::Infix(self.parse_infix_expression(left).unwrap());
+                    let l = left.clone();
+                    left = match self.parse_infix_expression(left, t) {
+                        Ok(x) => x,
+                        Err(_) => return Some(l),
+                    }
                 }
                 Some(left)
             }
@@ -315,21 +345,52 @@ impl Parser {
             .ok_or(t)
     }
 
-    fn parse_infix_expression(&mut self, left: Expression) -> Result<Box<InfixExpression>, Token> {
-        let precedence = self.curr_precedence();
-        let t = self.curr_token.clone();
+    fn parse_infix_expression(
+        &mut self,
+        left: Expression,
+        match_token: Token,
+    ) -> Result<Expression, Token> {
+        match match_token {
+            // call expression
+            Token::LParen => self.parse_call_arguments().map(|arguments| {
+                Expression::Call(Box::new(CallExpression {
+                    function: left,
+                    arguments,
+                }))
+            }),
+            // infix operator
+            _ => {
+                let precedence = self.curr_precedence();
+                let t = self.curr_token.clone();
 
-        self.next_token();
+                self.next_token();
 
-        self.parse_expression(precedence)
-            .map(|right| {
-                Box::new(InfixExpression {
-                    operator: t.clone(),
-                    left,
-                    right,
-                })
-            })
-            .ok_or(t)
+                self.parse_expression(precedence)
+                    .map(|right| {
+                        Expression::Operation(Box::new(InfixExpression {
+                            operator: t.clone(),
+                            left,
+                            right,
+                        }))
+                    })
+                    .ok_or(t)
+            }
+        }
+    }
+
+    fn has_peek_infix_parse(&mut self) -> Option<Token> {
+        match self.peek_token.clone() {
+            Token::Plus
+            | Token::Minus
+            | Token::Slash
+            | Token::Asterisk
+            | Token::Equals
+            | Token::NotEquals
+            | Token::LParen
+            | Token::Lt
+            | Token::Gt => Some(self.peek_token.clone()),
+            _ => None,
+        }
     }
 
     fn parse_prefix_expression(&mut self) -> Result<Expression, Token> {
@@ -425,18 +486,47 @@ impl Parser {
 
         self.next_token();
 
-        while self.peek_token_is(Token::Comma) {
-            self.print_tokens();
-            params.push(Identifier(self.curr_token.clone()));
-            self.next_token();
-            self.next_token();
-        }
-
         params.push(Identifier(self.curr_token.clone()));
+
+        while self.peek_token_is(Token::Comma) {
+            self.next_token();
+            self.next_token();
+            params.push(Identifier(self.curr_token.clone()));
+        }
 
         self.expect_peek_(Token::RParen)?;
 
         Ok(params)
+    }
+
+    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, Token> {
+        let mut args = vec![];
+
+        if self.peek_token_is(Token::RParen) {
+            self.next_token();
+            return Ok(args);
+        }
+
+        self.next_token();
+
+        args.push(
+            self.parse_expression(Precedence::Lowest)
+                .ok_or(self.curr_token.clone())?,
+        );
+
+        while self.peek_token_is(Token::Comma) {
+            self.next_token();
+            self.next_token();
+
+            args.push(
+                self.parse_expression(Precedence::Lowest)
+                    .ok_or(self.curr_token.clone())?,
+            );
+        }
+
+        self.expect_peek_(Token::RParen)?;
+
+        Ok(args)
     }
 
     fn parse_identifier(&self) -> Expression {
@@ -449,20 +539,6 @@ impl Parser {
 
     fn parse_boolean_literal(&self) -> Expression {
         Expression::BooleanLiteral(self.curr_token.clone())
-    }
-
-    fn has_peek_infix_parse(&mut self) -> bool {
-        match self.peek_token.clone() {
-            Token::Plus
-            | Token::Minus
-            | Token::Slash
-            | Token::Asterisk
-            | Token::Equals
-            | Token::NotEquals
-            | Token::Lt
-            | Token::Gt => true,
-            _ => false,
-        }
     }
 
     fn no_prefix_parse_error(&mut self, token: Token) {
@@ -789,7 +865,7 @@ mod tests {
         for (i, t) in expected_tokens.iter().enumerate() {
             assert_eq!(
                 program.statements[i],
-                Statement::Expression(Expression::Infix(Box::new(InfixExpression {
+                Statement::Expression(Expression::Operation(Box::new(InfixExpression {
                     operator: t.clone(),
                     left: Expression::IntegerLiteral(Token::Int(5)),
                     right: Expression::IntegerLiteral(Token::Int(5))
@@ -817,18 +893,18 @@ mod tests {
         // (1 < (2 - (3 * 4))) > 5;
         assert_eq!(
             program.statements[0],
-            Statement::Expression(Expression::Infix(Box::new(InfixExpression {
+            Statement::Expression(Expression::Operation(Box::new(InfixExpression {
                 operator: Token::Gt,
-                left: Expression::Infix(Box::new(InfixExpression {
+                left: Expression::Operation(Box::new(InfixExpression {
                     operator: Token::Lt,
                     left: Expression::Prefix(Box::new(PrefixExpression {
                         operator: Token::Minus,
                         right: Expression::IntegerLiteral(Token::Int(1)),
                     })),
-                    right: Expression::Infix(Box::new(InfixExpression {
+                    right: Expression::Operation(Box::new(InfixExpression {
                         operator: Token::Minus,
                         left: Expression::IntegerLiteral(Token::Int(2)),
-                        right: Expression::Infix(Box::new(InfixExpression {
+                        right: Expression::Operation(Box::new(InfixExpression {
                             operator: Token::Asterisk,
                             left: Expression::IntegerLiteral(Token::Int(3)),
                             right: Expression::IntegerLiteral(Token::Int(4)),
@@ -841,9 +917,9 @@ mod tests {
         // (3 > 5) == false;
         assert_eq!(
             program.statements[1],
-            Statement::Expression(Expression::Infix(Box::new(InfixExpression {
+            Statement::Expression(Expression::Operation(Box::new(InfixExpression {
                 operator: Token::Equals,
-                left: Expression::Infix(Box::new(InfixExpression {
+                left: Expression::Operation(Box::new(InfixExpression {
                     operator: Token::Gt,
                     left: Expression::IntegerLiteral(Token::Int(3)),
                     right: Expression::IntegerLiteral(Token::Int(5))
@@ -870,10 +946,10 @@ mod tests {
 
         assert_eq!(
             program.statements[0],
-            Statement::Expression(Expression::Infix(Box::new(InfixExpression {
+            Statement::Expression(Expression::Operation(Box::new(InfixExpression {
                 operator: Token::Plus,
                 left: Expression::IntegerLiteral(Token::Int(1)),
-                right: Expression::Infix(Box::new(InfixExpression {
+                right: Expression::Operation(Box::new(InfixExpression {
                     operator: Token::Minus,
                     left: Expression::IntegerLiteral(Token::Int(2)),
                     right: Expression::IntegerLiteral(Token::Int(3))
@@ -900,7 +976,7 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::Expression(Expression::If(Box::new(IfExpression {
-                condition: Expression::Infix(Box::new(InfixExpression {
+                condition: Expression::Operation(Box::new(InfixExpression {
                     operator: Token::Lt,
                     left: Expression::Ident(Token::Ident(String::from("x"))),
                     right: Expression::Ident(Token::Ident(String::from("y"))),
@@ -933,7 +1009,7 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::Expression(Expression::If(Box::new(IfExpression {
-                condition: Expression::Infix(Box::new(InfixExpression {
+                condition: Expression::Operation(Box::new(InfixExpression {
                     operator: Token::Lt,
                     left: Expression::Ident(Token::Ident(String::from("x"))),
                     right: Expression::Ident(Token::Ident(String::from("y"))),
@@ -1000,7 +1076,7 @@ mod tests {
                     Identifier(Token::Ident(String::from("z"))),
                 ],
                 body: BlockStatement {
-                    statements: vec![Statement::Expression(Expression::Infix(Box::new(
+                    statements: vec![Statement::Expression(Expression::Operation(Box::new(
                         InfixExpression {
                             operator: Token::Plus,
                             left: Expression::Ident(Token::Ident(String::from("x"))),
@@ -1009,6 +1085,80 @@ mod tests {
                     )))]
                 }
             }))
+        );
+    }
+
+    #[test]
+    fn test_call_expr() {
+        let input = "
+        a();
+        a(1, x);
+        a(x + y, 2 - b());
+        fn() { 1; }();
+        ";
+        // a();
+        // a(1, x);
+        // a(x + y, 2 - b());
+        // fn() { 1; }();
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::Call(Box::new(CallExpression {
+                arguments: vec![],
+                function: Expression::Ident(Token::Ident(String::from("a")))
+            })))
+        );
+        assert_eq!(
+            program.statements[1],
+            Statement::Expression(Expression::Call(Box::new(CallExpression {
+                arguments: vec![
+                    Expression::IntegerLiteral(Token::Int(1)),
+                    Expression::Ident(Token::Ident(String::from("x")))
+                ],
+                function: Expression::Ident(Token::Ident(String::from("a")))
+            })))
+        );
+        assert_eq!(
+            program.statements[2],
+            Statement::Expression(Expression::Call(Box::new(CallExpression {
+                arguments: vec![
+                    Expression::Operation(Box::new(InfixExpression {
+                        operator: Token::Plus,
+                        left: Expression::Ident(Token::Ident(String::from("x"))),
+                        right: Expression::Ident(Token::Ident(String::from("y"))),
+                    })),
+                    Expression::Operation(Box::new(InfixExpression {
+                        operator: Token::Minus,
+                        left: Expression::IntegerLiteral(Token::Int(2)),
+                        right: Expression::Call(Box::new(CallExpression {
+                            function: Expression::Ident(Token::Ident(String::from("b"))),
+                            arguments: vec![]
+                        })),
+                    })),
+                ],
+                function: Expression::Ident(Token::Ident(String::from("a")))
+            })))
+        );
+        assert_eq!(
+            program.statements[3],
+            Statement::Expression(Expression::Call(Box::new(CallExpression {
+                arguments: vec![],
+                function: Expression::Fn(FunctionLiteral {
+                    parameters: vec![],
+                    body: BlockStatement {
+                        statements: vec![Statement::Expression(Expression::IntegerLiteral(
+                            Token::Int(1)
+                        ))]
+                    }
+                })
+            })))
         );
     }
 }
