@@ -1,6 +1,9 @@
 use std::io;
 use std::io::Write;
 
+use crate::lexer::Lexer;
+use crate::parser::Parser;
+
 mod lexer;
 mod parser;
 
@@ -17,16 +20,10 @@ fn main() -> io::Result<()> {
         let mut buf = String::new();
         io::stdin().read_line(&mut buf)?;
 
-        let mut l = lexer::Lexer::new(buf);
-        let mut output = vec![];
+        let l = Lexer::new(buf);
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
 
-        loop {
-            let token = l.next_token();
-            output.push(token.clone());
-            if token == lexer::Token::Eof {
-                break;
-            }
-        }
-        println!("{:?}", output);
+        println!("{:?}", program);
     }
 }

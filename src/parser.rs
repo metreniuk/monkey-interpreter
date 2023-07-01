@@ -148,7 +148,8 @@ impl Display for FunctionLiteral {
     }
 }
 
-struct Program {
+#[derive(Debug, Clone)]
+pub struct Program {
     statements: Vec<Statement>,
 }
 
@@ -186,7 +187,7 @@ enum Precedence {
     Call = 7,
 }
 
-struct Parser {
+pub struct Parser {
     l: Lexer,
     curr_token: Token,
     peek_token: Token,
@@ -210,7 +211,7 @@ impl Parser {
         p
     }
 
-    pub fn create_precedence() -> HashMap<Token, Precedence> {
+    fn create_precedence() -> HashMap<Token, Precedence> {
         let mut hm = HashMap::new();
         hm.insert(Token::Equals, Precedence::Equals);
         hm.insert(Token::NotEquals, Precedence::Equals);
@@ -230,7 +231,7 @@ impl Parser {
         self.peek_token = self.l.next_token();
     }
 
-    fn parse_program(&mut self) -> Program {
+    pub fn parse_program(&mut self) -> Program {
         let mut program = Program { statements: vec![] };
 
         while !self.curr_token_is(Token::Eof) {
@@ -246,7 +247,6 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
-        self.print_tokens();
         match self.curr_token {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
