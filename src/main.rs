@@ -1,10 +1,15 @@
 use std::io;
 use std::io::Write;
 
+use crate::evaluator::eval;
 use crate::lexer::Lexer;
+use crate::object::Inspectable;
 use crate::parser::Parser;
 
+mod ast;
+mod evaluator;
 mod lexer;
+mod object;
 mod parser;
 
 pub fn do_work() -> bool {
@@ -24,6 +29,10 @@ fn main() -> io::Result<()> {
         let mut p = Parser::new(l);
         let program = p.parse_program();
 
-        println!("{:?}", program);
+        let output = eval(ast::Node::Program(program));
+
+        let str = output.inspect();
+
+        println!("{}", str);
     }
 }
