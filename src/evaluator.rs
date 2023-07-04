@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    ast::{Expression, Node, Statement},
+    ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
     object::{Boolean, Integer, Null, ObjectEnum},
 };
@@ -28,12 +28,15 @@ pub fn eval(node: Node) -> ObjectEnum {
                 let right = eval(Node::Expression(expr.right));
                 eval_infix_expression(expr.operator, left, right)
             }
+            Expression::If(expr) => eval_if_expression(*expr),
             _ => ObjectEnum::Null(NULL),
         },
+
         Node::Statement(stmt) => match stmt {
             Statement::Expression(expr) => eval(Node::Expression(expr)),
             _ => ObjectEnum::Null(NULL),
         },
+        Node::BlockStatement(bl) => eval_statements(bl.statements),
         Node::Program(pr) => eval_statements(pr.statements),
     }
 }
@@ -46,6 +49,25 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
     }
 
     obj
+}
+
+fn eval_if_expression(expr: IfExpression) -> ObjectEnum {
+    let cond = eval(expr.condition.into());
+    println!("HERE {:?} {}", cond, is_truthy(&cond));
+    if is_truthy(&cond) {
+        eval(expr.consequence.into())
+    } else if !expr.alternative.statements.is_empty() {
+        eval(expr.alternative.into())
+    } else {
+        ObjectEnum::Null(NULL)
+    }
+}
+
+fn is_truthy(obj: &ObjectEnum) -> bool {
+    match obj {
+        ObjectEnum::Boolean(Boolean { value: false }) | ObjectEnum::Null(_) => false,
+        _ => true,
+    }
 }
 
 fn eval_prefix_expression(operator: Token, right: ObjectEnum) -> ObjectEnum {
@@ -197,5 +219,16 @@ mod tests {
         test_program("!!true;", "true");
         test_program("!!5;", "true");
         test_program("!!0;", "false");
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        test_program("if (true) { 10 };", "10");
+        test_program("if (false) { 10 };", "null");
+        test_program("if (1) { 10 };", "10");
+        test_program("if (1 < 2) { 10 };", "10");
+        test_program("if (1 > 2) { 10 };", "null");
+        test_program("if (1 > 2) { 10 } else { 20 };", "20");
+        test_program("if (1 < 2) { 10 } else { 20 };", "10");
     }
 }

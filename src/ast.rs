@@ -7,6 +7,31 @@ pub enum Node {
     Statement(Statement),
     Expression(Expression),
     Program(Program),
+    BlockStatement(BlockStatement),
+}
+
+impl From<Statement> for Node {
+    fn from(value: Statement) -> Self {
+        Node::Statement(value)
+    }
+}
+
+impl From<Expression> for Node {
+    fn from(value: Expression) -> Self {
+        Node::Expression(value)
+    }
+}
+
+impl From<Program> for Node {
+    fn from(value: Program) -> Self {
+        Node::Program(value)
+    }
+}
+
+impl From<BlockStatement> for Node {
+    fn from(value: BlockStatement) -> Self {
+        Node::BlockStatement(value)
+    }
 }
 
 // pub trait Node {
