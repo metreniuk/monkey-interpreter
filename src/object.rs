@@ -4,6 +4,7 @@ pub trait Inspectable {
     fn inspect(&self) -> String;
 }
 
+#[derive(Debug)]
 pub enum ObjectEnum {
     Integer(Integer),
     Boolean(Boolean),
@@ -17,6 +18,19 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Boolean(obj) => Boolean::inspect(obj),
             ObjectEnum::Null(obj) => Null::inspect(obj),
         }
+    }
+}
+
+impl PartialEq for ObjectEnum {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => x.value == y.value,
+            (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => x.value == y.value,
+            _ => false,
+        }
+    }
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
     }
 }
 

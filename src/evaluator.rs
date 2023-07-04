@@ -23,6 +23,11 @@ pub fn eval(node: Node) -> ObjectEnum {
                 let right = eval(Node::Expression(expr.right));
                 eval_prefix_expression(expr.operator, right)
             }
+            Expression::Operation(expr) => {
+                let left = eval(Node::Expression(expr.left));
+                let right = eval(Node::Expression(expr.right));
+                eval_infix_expression(expr.operator, left, right)
+            }
             _ => ObjectEnum::Null(NULL),
         },
         Node::Statement(stmt) => match stmt {
@@ -47,6 +52,48 @@ fn eval_prefix_expression(operator: Token, right: ObjectEnum) -> ObjectEnum {
     match operator {
         Token::Bang => ObjectEnum::Boolean(eval_bang_operator(right)),
         Token::Minus => eval_minus_operator(right),
+        _ => ObjectEnum::Null(NULL),
+    }
+}
+
+fn eval_infix_expression(operator: Token, left: ObjectEnum, right: ObjectEnum) -> ObjectEnum {
+    match (left, right) {
+        (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => {
+            eval_infix_integer_expression(operator, x, y)
+        }
+        (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => {
+            ObjectEnum::Boolean(Boolean { value: x == y })
+        }
+        _ => ObjectEnum::Null(NULL),
+    }
+}
+
+fn eval_infix_integer_expression(operator: Token, left: Integer, right: Integer) -> ObjectEnum {
+    match operator {
+        Token::Plus => ObjectEnum::Integer(Integer {
+            value: left.value + right.value,
+        }),
+        Token::Asterisk => ObjectEnum::Integer(Integer {
+            value: left.value * right.value,
+        }),
+        Token::Minus => ObjectEnum::Integer(Integer {
+            value: left.value - right.value,
+        }),
+        Token::Slash => ObjectEnum::Integer(Integer {
+            value: left.value / right.value,
+        }),
+        Token::Equals => ObjectEnum::Boolean(Boolean {
+            value: left == right,
+        }),
+        Token::NotEquals => ObjectEnum::Boolean(Boolean {
+            value: left != right,
+        }),
+        Token::Lt => ObjectEnum::Boolean(Boolean {
+            value: left.value < right.value,
+        }),
+        Token::Gt => ObjectEnum::Boolean(Boolean {
+            value: left.value > right.value,
+        }),
         _ => ObjectEnum::Null(NULL),
     }
 }
@@ -94,6 +141,43 @@ mod tests {
     fn test_int() {
         test_program("5;", "5");
         test_program("-5;", "-5");
+    }
+
+    #[test]
+    fn test_infix_integer_expression() {
+        test_program("5;", "5");
+        test_program("10;", "10");
+        test_program("-5;", "-5");
+        test_program("-10;", "-10");
+        test_program("5 + 5 + 5 + 5 - 10;", "10");
+        test_program("2 * 2 * 2 * 2 * 2;", "32");
+        test_program("-50 + 100 + -50;", "0");
+        test_program("5 * 2 + 10;", "20");
+        test_program("5 + 2 * 10;", "25");
+        test_program("20 + 2 * -10;", "0");
+        test_program("50 / 2 * 2 + 10;", "60");
+        test_program("2 * (5 + 10);", "30");
+        test_program("3 * 3 * 3 + 10;", "37");
+        test_program("3 * (3 * 3) + 10;", "37");
+        test_program("(5 + 10 * 2 + 15 / 3) * 2 + -10;", "50");
+    }
+
+    #[test]
+    fn test_infix_boolean_expression() {
+        test_program("true;", "true");
+        test_program("false;", "false");
+        test_program("1 < 2;", "true");
+        test_program("1 > 2;", "false");
+        test_program("1 < 1;", "false");
+        test_program("1 > 1;", "false");
+        test_program("1 == 1;", "true");
+        test_program("1 != 1;", "false");
+        test_program("1 == 2;", "false");
+        test_program("1 != 2;", "true");
+        test_program("(1 < 2) == true;", "true");
+        test_program("(1 < 2) == false;", "false");
+        test_program("(1 > 2) == true;", "false");
+        test_program("(1 > 2) == false;", "true");
     }
 
     #[test]
