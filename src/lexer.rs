@@ -46,8 +46,8 @@ pub enum Token {
 impl Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Ident(x) => write!(f, "Ident({})", x),
-            Token::Int(x) => write!(f, "Int({})", x),
+            Token::Ident(x) => write!(f, "{}", x),
+            Token::Int(x) => write!(f, "{}", x),
             Token::Illegal => write!(f, "Illegal"),
             Token::Eof => write!(f, "Eof"),
             Token::Assign => write!(f, "="),
@@ -68,13 +68,13 @@ impl Display for Token {
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
-            Token::Function => write!(f, "Function"),
-            Token::Let => write!(f, "Let"),
-            Token::If => write!(f, "If"),
-            Token::Else => write!(f, "Else"),
-            Token::Return => write!(f, "Return"),
-            Token::True => write!(f, "True"),
-            Token::False => write!(f, "False"),
+            Token::Function => write!(f, "fn"),
+            Token::Let => write!(f, "let"),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::Return => write!(f, "return"),
+            Token::True => write!(f, "true"),
+            Token::False => write!(f, "false"),
         }
     }
 }
@@ -155,7 +155,6 @@ impl Lexer {
                         should_read_next = false;
                         Token::Int(num)
                     } else {
-                        println!("ILL {:?}", ch);
                         Token::Illegal
                     }
                 }

@@ -20,12 +20,12 @@ pub fn eval(node: Node) -> ObjectEnum {
             Expression::BooleanLiteral(Token::True) => ObjectEnum::Boolean(TRUE),
             Expression::BooleanLiteral(Token::False) => ObjectEnum::Boolean(FALSE),
             Expression::Prefix(expr) => {
-                let right = eval(Node::Expression(expr.right));
+                let right = eval(expr.right.into());
                 eval_prefix_expression(expr.operator, right)
             }
             Expression::Operation(expr) => {
-                let left = eval(Node::Expression(expr.left));
-                let right = eval(Node::Expression(expr.right));
+                let left = eval(expr.left.into());
+                let right = eval(expr.right.into());
                 eval_infix_expression(expr.operator, left, right)
             }
             Expression::If(expr) => eval_if_expression(*expr),
@@ -33,7 +33,7 @@ pub fn eval(node: Node) -> ObjectEnum {
         },
 
         Node::Statement(stmt) => match stmt {
-            Statement::Expression(expr) => eval(Node::Expression(expr)),
+            Statement::Expression(expr) => eval(expr.into()),
             _ => ObjectEnum::Null(NULL),
         },
         Node::BlockStatement(bl) => eval_statements(bl.statements),
@@ -53,7 +53,6 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
 
 fn eval_if_expression(expr: IfExpression) -> ObjectEnum {
     let cond = eval(expr.condition.into());
-    println!("HERE {:?} {}", cond, is_truthy(&cond));
     if is_truthy(&cond) {
         eval(expr.consequence.into())
     } else if !expr.alternative.statements.is_empty() {

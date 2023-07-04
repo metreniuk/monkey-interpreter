@@ -10,6 +10,17 @@ pub enum Node {
     BlockStatement(BlockStatement),
 }
 
+impl Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Node::BlockStatement(x) => BlockStatement::fmt(x, f),
+            Node::Expression(x) => Expression::fmt(x, f),
+            Node::Program(x) => Program::fmt(x, f),
+            Node::Statement(x) => Statement::fmt(x, f),
+        }
+    }
+}
+
 impl From<Statement> for Node {
     fn from(value: Statement) -> Self {
         Node::Statement(value)
@@ -45,6 +56,16 @@ pub enum Statement {
     Expression(Expression),
 }
 
+impl Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Statement::Let(x) => LetStatement::fmt(x, f),
+            Statement::Return(x) => ReturnStatement::fmt(x, f),
+            Statement::Expression(x) => Expression::fmt(x, f),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Ident(Token),
@@ -59,7 +80,16 @@ pub enum Expression {
 
 impl Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match self {
+            Expression::Ident(t) => write!(f, "{}", t),
+            Expression::IntegerLiteral(t) => write!(f, "{}", t),
+            Expression::BooleanLiteral(t) => write!(f, "{}", t),
+            Expression::Fn(x) => write!(f, "{}", x),
+            Expression::Prefix(x) => write!(f, "{}", x),
+            Expression::Operation(x) => write!(f, "{}", x),
+            Expression::If(x) => write!(f, "{}", x),
+            Expression::Call(x) => write!(f, "{}", x),
+        }
     }
 }
 
@@ -103,9 +133,16 @@ impl Display for IfExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "if ({}) {{{}}} else {{{}}})",
-            self.condition, self.consequence, self.alternative
-        )
+            "if {} {{ {} }}",
+            self.condition,
+            self.consequence.to_string(),
+        )?;
+
+        if !self.alternative.statements.is_empty() {
+            write!(f, " else {{ {} }})", self.alternative.to_string())?
+        }
+
+        Ok(())
     }
 }
 
@@ -143,7 +180,7 @@ pub struct BlockStatement {
 impl Display for BlockStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for stmt in self.statements.iter() {
-            write!(f, "{:?}", stmt)?;
+            write!(f, "{}", stmt)?;
         }
         Ok(())
     }
@@ -165,7 +202,7 @@ impl Display for FunctionLiteral {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fn(")?;
         for param in self.parameters.iter() {
-            write!(f, "{:?}", param)?;
+            write!(f, "{}", param)?;
         }
         write!(f, ") {}", self.body)?;
         Ok(())
@@ -177,10 +214,25 @@ pub struct Program {
     pub statements: Vec<Statement>,
 }
 
+impl Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for stmt in self.statements.iter() {
+            write!(f, "{}", stmt)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct LetStatement {
     pub name: Identifier,
     pub value: Expression,
+}
+
+impl Display for LetStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "let {} = {};", self.name, self.value)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -188,8 +240,20 @@ pub struct ReturnStatement {
     pub return_value: Expression,
 }
 
+impl Display for ReturnStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "return {};", self.return_value)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Identifier(pub Token);
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IntegerLiteral(pub Token);
