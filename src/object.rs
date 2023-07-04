@@ -9,6 +9,7 @@ pub enum ObjectEnum {
     Integer(Integer),
     Boolean(Boolean),
     Null(Null),
+    Return(Box<ReturnValue>),
 }
 
 impl Inspectable for ObjectEnum {
@@ -17,6 +18,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Integer(obj) => Integer::inspect(obj),
             ObjectEnum::Boolean(obj) => Boolean::inspect(obj),
             ObjectEnum::Null(obj) => Null::inspect(obj),
+            ObjectEnum::Return(obj) => ReturnValue::inspect(obj),
         }
     }
 }
@@ -24,8 +26,8 @@ impl Inspectable for ObjectEnum {
 impl PartialEq for ObjectEnum {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => x.value == y.value,
-            (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => x.value == y.value,
+            (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => x.0 == y.0,
+            (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => x.0 == y.0,
             _ => false,
         }
     }
@@ -34,37 +36,54 @@ impl PartialEq for ObjectEnum {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Integer {
-    pub value: isize,
-}
-
-impl Integer {
-    pub fn new(value: isize) -> Self {
-        Integer { value }
+impl From<Integer> for ObjectEnum {
+    fn from(value: Integer) -> Self {
+        ObjectEnum::Integer(value)
     }
 }
+
+impl From<Boolean> for ObjectEnum {
+    fn from(value: Boolean) -> Self {
+        ObjectEnum::Boolean(value)
+    }
+}
+
+impl From<Null> for ObjectEnum {
+    fn from(value: Null) -> Self {
+        ObjectEnum::Null(value)
+    }
+}
+
+impl From<ReturnValue> for ObjectEnum {
+    fn from(value: ReturnValue) -> Self {
+        ObjectEnum::Return(Box::new(value))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Integer(pub isize);
 
 impl Inspectable for Integer {
     fn inspect(&self) -> String {
-        format!("{}", self.value)
+        format!("{}", self.0)
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Boolean {
-    pub value: bool,
-}
-
-impl Boolean {
-    pub fn new(value: bool) -> Self {
-        Boolean { value }
-    }
-}
+pub struct Boolean(pub bool);
 
 impl Inspectable for Boolean {
     fn inspect(&self) -> String {
-        format!("{}", self.value)
+        format!("{}", self.0)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ReturnValue(ObjectEnum);
+
+impl Inspectable for ReturnValue {
+    fn inspect(&self) -> String {
+        format!("{}", self.0.inspect())
     }
 }
 

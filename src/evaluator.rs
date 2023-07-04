@@ -6,19 +6,17 @@ use crate::{
     object::{Boolean, Integer, Null, ObjectEnum},
 };
 
-const TRUE: Boolean = Boolean { value: true };
-const FALSE: Boolean = Boolean { value: false };
+const TRUE: Boolean = Boolean(true);
+const FALSE: Boolean = Boolean(false);
 const NULL: Null = Null {};
 
 pub fn eval(node: Node) -> ObjectEnum {
     match node {
         Node::Expression(exp) => match exp {
-            Expression::IntegerLiteral(Token::Int(value)) => {
-                ObjectEnum::Integer(Integer::new(value))
-            }
+            Expression::IntegerLiteral(Token::Int(value)) => Integer(value).into(),
             // TODO: make boolean literal contain only true and false
-            Expression::BooleanLiteral(Token::True) => ObjectEnum::Boolean(TRUE),
-            Expression::BooleanLiteral(Token::False) => ObjectEnum::Boolean(FALSE),
+            Expression::BooleanLiteral(Token::True) => TRUE.into(),
+            Expression::BooleanLiteral(Token::False) => FALSE.into(),
             Expression::Prefix(expr) => {
                 let right = eval(expr.right.into());
                 eval_prefix_expression(expr.operator, right)
@@ -29,12 +27,12 @@ pub fn eval(node: Node) -> ObjectEnum {
                 eval_infix_expression(expr.operator, left, right)
             }
             Expression::If(expr) => eval_if_expression(*expr),
-            _ => ObjectEnum::Null(NULL),
+            _ => NULL.into(),
         },
 
         Node::Statement(stmt) => match stmt {
             Statement::Expression(expr) => eval(expr.into()),
-            _ => ObjectEnum::Null(NULL),
+            _ => NULL.into(),
         },
         Node::BlockStatement(bl) => eval_statements(bl.statements),
         Node::Program(pr) => eval_statements(pr.statements),
@@ -42,10 +40,10 @@ pub fn eval(node: Node) -> ObjectEnum {
 }
 
 fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
-    let mut obj: ObjectEnum = ObjectEnum::Null(NULL);
+    let mut obj: ObjectEnum = NULL.into();
 
     for stmt in stmts {
-        obj = eval(Node::Statement(stmt));
+        obj = eval(stmt.into());
     }
 
     obj
@@ -58,22 +56,22 @@ fn eval_if_expression(expr: IfExpression) -> ObjectEnum {
     } else if !expr.alternative.statements.is_empty() {
         eval(expr.alternative.into())
     } else {
-        ObjectEnum::Null(NULL)
+        NULL.into()
     }
 }
 
 fn is_truthy(obj: &ObjectEnum) -> bool {
     match obj {
-        ObjectEnum::Boolean(Boolean { value: false }) | ObjectEnum::Null(_) => false,
+        ObjectEnum::Boolean(Boolean(false)) | ObjectEnum::Null(_) => false,
         _ => true,
     }
 }
 
 fn eval_prefix_expression(operator: Token, right: ObjectEnum) -> ObjectEnum {
     match operator {
-        Token::Bang => ObjectEnum::Boolean(eval_bang_operator(right)),
+        Token::Bang => eval_bang_operator(right).into(),
         Token::Minus => eval_minus_operator(right),
-        _ => ObjectEnum::Null(NULL),
+        _ => NULL.into(),
     }
 }
 
@@ -82,64 +80,46 @@ fn eval_infix_expression(operator: Token, left: ObjectEnum, right: ObjectEnum) -
         (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => {
             eval_infix_integer_expression(operator, x, y)
         }
-        (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => {
-            ObjectEnum::Boolean(Boolean { value: x == y })
-        }
-        _ => ObjectEnum::Null(NULL),
+        (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => Boolean(x == y).into(),
+        _ => NULL.into(),
     }
 }
 
 fn eval_infix_integer_expression(operator: Token, left: Integer, right: Integer) -> ObjectEnum {
     match operator {
-        Token::Plus => ObjectEnum::Integer(Integer {
-            value: left.value + right.value,
-        }),
-        Token::Asterisk => ObjectEnum::Integer(Integer {
-            value: left.value * right.value,
-        }),
-        Token::Minus => ObjectEnum::Integer(Integer {
-            value: left.value - right.value,
-        }),
-        Token::Slash => ObjectEnum::Integer(Integer {
-            value: left.value / right.value,
-        }),
-        Token::Equals => ObjectEnum::Boolean(Boolean {
-            value: left == right,
-        }),
-        Token::NotEquals => ObjectEnum::Boolean(Boolean {
-            value: left != right,
-        }),
-        Token::Lt => ObjectEnum::Boolean(Boolean {
-            value: left.value < right.value,
-        }),
-        Token::Gt => ObjectEnum::Boolean(Boolean {
-            value: left.value > right.value,
-        }),
-        _ => ObjectEnum::Null(NULL),
+        Token::Plus => Integer(left.0 + right.0).into(),
+        Token::Asterisk => Integer(left.0 * right.0).into(),
+        Token::Minus => Integer(left.0 - right.0).into(),
+        Token::Slash => Integer(left.0 / right.0).into(),
+        Token::Equals => Boolean(left == right).into(),
+        Token::NotEquals => Boolean(left != right).into(),
+        Token::Lt => Boolean(left.0 < right.0).into(),
+        Token::Gt => Boolean(left.0 > right.0).into(),
+        _ => NULL.into(),
     }
 }
 
 fn eval_bang_operator(right: ObjectEnum) -> Boolean {
     match right {
         ObjectEnum::Boolean(x) => match x {
-            Boolean { value: true } => FALSE,
-            Boolean { value: false } => TRUE,
+            Boolean(true) => FALSE,
+            Boolean(false) => TRUE,
         },
         ObjectEnum::Integer(x) => match x {
-            Integer { value: 0 } => TRUE,
+            Integer(0) => TRUE,
             _ => FALSE,
         },
-        ObjectEnum::Null(_) => TRUE,
+        _ => TRUE,
     }
 }
 
 fn eval_minus_operator(right: ObjectEnum) -> ObjectEnum {
     match right {
         ObjectEnum::Integer(x) => match x {
-            Integer { value: 0 } => ObjectEnum::Integer(Integer { value: 0 }),
-            Integer { value } => ObjectEnum::Integer(Integer { value: -value }),
+            Integer(0) => Integer(0).into(),
+            Integer(value) => Integer(-value).into(),
         },
-        _ => ObjectEnum::Null(NULL),
+        _ => NULL.into(),
     }
 }
 
