@@ -3,7 +3,7 @@
 use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
-    object::{Boolean, Integer, Null, ObjectEnum},
+    object::{Boolean, Integer, Null, ObjectEnum, ReturnValue},
 };
 
 const TRUE: Boolean = Boolean(true);
@@ -29,9 +29,12 @@ pub fn eval(node: Node) -> ObjectEnum {
             Expression::If(expr) => eval_if_expression(*expr),
             _ => NULL.into(),
         },
-
         Node::Statement(stmt) => match stmt {
             Statement::Expression(expr) => eval(expr.into()),
+            Statement::Return(expr) => {
+                let returned = eval(expr.return_value.into());
+                ReturnValue(returned).into()
+            }
             _ => NULL.into(),
         },
         Node::BlockStatement(bl) => eval_statements(bl.statements),
@@ -44,6 +47,10 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
 
     for stmt in stmts {
         obj = eval(stmt.into());
+
+        if let ObjectEnum::Return(returned) = obj {
+            return (*returned.clone()).into();
+        }
     }
 
     obj
@@ -209,5 +216,24 @@ mod tests {
         test_program("if (1 > 2) { 10 };", "null");
         test_program("if (1 > 2) { 10 } else { 20 };", "20");
         test_program("if (1 < 2) { 10 } else { 20 };", "10");
+    }
+
+    #[test]
+    fn test_return_statements() {
+        test_program("return 10;", "10");
+        test_program("return 10; 9;", "10");
+        test_program("return 2 * 5; 9;", "10");
+        test_program("9; return 2 * 5; 9;", "10");
+        test_program(
+            "
+            if (10 > 1) {
+                if (10 > 1) {
+                    return 10;
+                }
+                return 1; 
+            }
+        ",
+            "10",
+        )
     }
 }

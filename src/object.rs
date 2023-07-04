@@ -4,7 +4,7 @@ pub trait Inspectable {
     fn inspect(&self) -> String;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ObjectEnum {
     Integer(Integer),
     Boolean(Boolean),
@@ -60,7 +60,7 @@ impl From<ReturnValue> for ObjectEnum {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Integer(pub isize);
 
 impl Inspectable for Integer {
@@ -69,7 +69,7 @@ impl Inspectable for Integer {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Boolean(pub bool);
 
 impl Inspectable for Boolean {
@@ -78,8 +78,8 @@ impl Inspectable for Boolean {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct ReturnValue(ObjectEnum);
+#[derive(Debug, PartialEq, Clone)]
+pub struct ReturnValue(pub ObjectEnum);
 
 impl Inspectable for ReturnValue {
     fn inspect(&self) -> String {
@@ -87,7 +87,7 @@ impl Inspectable for ReturnValue {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Null {}
 
 impl Inspectable for Null {
