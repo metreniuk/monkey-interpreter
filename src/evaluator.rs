@@ -3,30 +3,32 @@
 use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
-    object::{Boolean, Error, Integer, Null, ObjectEnum, ReturnValue},
+    object::{Boolean, Environment, Error, Integer, Null, ObjectEnum, ReturnValue},
 };
 
 const TRUE: Boolean = Boolean(true);
 const FALSE: Boolean = Boolean(false);
 const NULL: Null = Null {};
 
-pub fn eval(node: Node) -> ObjectEnum {
+pub fn eval(node: Node, env: &mut Environment) -> ObjectEnum {
     match node {
         Node::Expression(exp) => match exp {
             Expression::IntegerLiteral(Token::Int(value)) => Integer(value).into(),
             // TODO: make boolean literal contain only true and false
             Expression::BooleanLiteral(Token::True) => TRUE.into(),
             Expression::BooleanLiteral(Token::False) => FALSE.into(),
+            // TODO: make ident contain only token for ident
+            Expression::Ident(token) => eval_identifier(token, env),
             Expression::Prefix(expr) => {
-                let right = eval(expr.right.into());
+                let right = eval(expr.right.into(), env);
                 if let ObjectEnum::Return(_) = right.clone() {
                     return right;
                 }
                 eval_prefix_expression(expr.operator, right)
             }
             Expression::Operation(expr) => {
-                let left = eval(expr.left.into());
-                let right = eval(expr.right.into());
+                let left = eval(expr.left.into(), env);
+                let right = eval(expr.right.into(), env);
                 if let ObjectEnum::Return(_) = left.clone() {
                     return left;
                 } else if let ObjectEnum::Return(_) = right.clone() {
@@ -34,36 +36,43 @@ pub fn eval(node: Node) -> ObjectEnum {
                 }
                 eval_infix_expression(expr.operator, left, right)
             }
-            Expression::If(expr) => eval_if_expression(*expr),
+            Expression::If(expr) => eval_if_expression(*expr, env),
             _ => NULL.into(),
         },
         Node::Statement(stmt) => match stmt {
+            Statement::Let(expr) => {
+                let val = eval(expr.value.into(), env);
+                if let ObjectEnum::Error(_) = val.clone() {
+                    return val;
+                }
+                env.set(expr.name.0.to_string(), val.clone());
+                val
+            }
             Statement::Expression(expr) => {
-                let res = eval(expr.into());
+                let res = eval(expr.into(), env);
                 if let ObjectEnum::Return(_) = res.clone() {
                     return res;
                 }
                 res
             }
             Statement::Return(expr) => {
-                let returned = eval(expr.return_value.into());
+                let returned = eval(expr.return_value.into(), env);
                 if let ObjectEnum::Return(_) = returned.clone() {
                     return returned;
                 }
                 ReturnValue(returned).into()
             }
-            _ => NULL.into(),
         },
-        Node::BlockStatement(bl) => eval_statements(bl.statements),
-        Node::Program(pr) => eval_statements(pr.statements),
+        Node::BlockStatement(bl) => eval_statements(bl.statements, env),
+        Node::Program(pr) => eval_statements(pr.statements, env),
     }
 }
 
-fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
+fn eval_statements(stmts: Vec<Statement>, env: &mut Environment) -> ObjectEnum {
     let mut obj: ObjectEnum = NULL.into();
 
     for stmt in stmts {
-        obj = eval(stmt.into());
+        obj = eval(stmt.into(), env);
 
         match obj {
             ObjectEnum::Return(returned) => {
@@ -77,17 +86,30 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
     obj
 }
 
-fn eval_if_expression(expr: IfExpression) -> ObjectEnum {
-    let cond = eval(expr.condition.into());
+fn eval_identifier(token: Token, env: &mut Environment) -> ObjectEnum {
+    if let Token::Ident(name) = token {
+        let val = env.get(name.clone());
+        if let Some(v) = val {
+            v.clone()
+        } else {
+            Error::new(format!("Identifier not found: {}", name)).into()
+        }
+    } else {
+        Error::new(format!("Wrong identifier token: {}", token)).into()
+    }
+}
+
+fn eval_if_expression(expr: IfExpression, env: &mut Environment) -> ObjectEnum {
+    let cond = eval(expr.condition.into(), env);
 
     if let ObjectEnum::Return(_) = cond.clone() {
         return cond;
     }
 
     if is_truthy(&cond) {
-        eval(expr.consequence.into())
+        eval(expr.consequence.into(), env)
     } else if !expr.alternative.statements.is_empty() {
-        eval(expr.alternative.into())
+        eval(expr.alternative.into(), env)
     } else {
         NULL.into()
     }
@@ -169,8 +191,9 @@ mod tests {
         let l = Lexer::new(String::from(input));
         let mut p = Parser::new(l);
         let program = p.parse_program();
+        let mut env = Environment::new();
 
-        let obj = eval(Node::Program(program));
+        let obj = eval(Node::Program(program), &mut env);
         assert_eq!(obj.inspect(), target);
     }
 
@@ -269,18 +292,13 @@ mod tests {
     #[test]
     fn test_error() {
         test_program("5 + true;", "Type mismatch: INTEGER + BOOLEAN");
-
         test_program("5 + true; 5;", "Type mismatch: INTEGER + BOOLEAN");
-
         test_program("-true;", "Unknown operator: -BOOLEAN");
-
         test_program("true + false;", "Unknown operator: BOOLEAN + BOOLEAN");
-
         test_program(
             "if (10 > 1) { true + false; };",
             "Unknown operator: BOOLEAN + BOOLEAN",
         );
-
         test_program(
             "
         if (10 > 1) {
@@ -291,5 +309,14 @@ mod tests {
         ",
             "Unknown operator: BOOLEAN + BOOLEAN",
         );
+        test_program("foobar;", "Identifier not found: foobar");
+    }
+
+    #[test]
+    fn test_let_statements() {
+        test_program("let a = 5; a;", "5");
+        test_program("let a = 5 * 5; a;", "25");
+        test_program("let a = 5; let b = a; b;", "5");
+        test_program("let a = 5; let b = a; let c = a + b + 5; c;", "15");
     }
 }

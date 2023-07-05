@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use std::fmt::{self, Display};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 
 pub trait Inspectable {
     fn inspect(&self) -> String;
@@ -175,5 +178,25 @@ impl Inspectable for Error {
 
     fn inspect_type(&self) -> String {
         self.inspect()
+    }
+}
+
+pub struct Environment {
+    store: HashMap<String, ObjectEnum>,
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Environment {
+            store: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, key: String) -> Option<&ObjectEnum> {
+        self.store.get(&key)
+    }
+
+    pub fn set(&mut self, key: String, val: ObjectEnum) -> Option<ObjectEnum> {
+        self.store.insert(key, val)
     }
 }
