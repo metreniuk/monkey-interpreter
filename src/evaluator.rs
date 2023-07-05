@@ -3,7 +3,7 @@
 use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
-    object::{Boolean, Integer, Null, ObjectEnum, ReturnValue},
+    object::{Boolean, Error, Integer, Null, ObjectEnum, ReturnValue},
 };
 
 const TRUE: Boolean = Boolean(true);
@@ -19,20 +19,37 @@ pub fn eval(node: Node) -> ObjectEnum {
             Expression::BooleanLiteral(Token::False) => FALSE.into(),
             Expression::Prefix(expr) => {
                 let right = eval(expr.right.into());
+                if let ObjectEnum::Return(_) = right.clone() {
+                    return right;
+                }
                 eval_prefix_expression(expr.operator, right)
             }
             Expression::Operation(expr) => {
                 let left = eval(expr.left.into());
                 let right = eval(expr.right.into());
+                if let ObjectEnum::Return(_) = left.clone() {
+                    return left;
+                } else if let ObjectEnum::Return(_) = right.clone() {
+                    return right;
+                }
                 eval_infix_expression(expr.operator, left, right)
             }
             Expression::If(expr) => eval_if_expression(*expr),
             _ => NULL.into(),
         },
         Node::Statement(stmt) => match stmt {
-            Statement::Expression(expr) => eval(expr.into()),
+            Statement::Expression(expr) => {
+                let res = eval(expr.into());
+                if let ObjectEnum::Return(_) = res.clone() {
+                    return res;
+                }
+                res
+            }
             Statement::Return(expr) => {
                 let returned = eval(expr.return_value.into());
+                if let ObjectEnum::Return(_) = returned.clone() {
+                    return returned;
+                }
                 ReturnValue(returned).into()
             }
             _ => NULL.into(),
@@ -48,8 +65,12 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
     for stmt in stmts {
         obj = eval(stmt.into());
 
-        if let ObjectEnum::Return(returned) = obj {
-            return (*returned.clone()).into();
+        match obj {
+            ObjectEnum::Return(returned) => {
+                return (*returned.clone()).into();
+            }
+            ObjectEnum::Error(error) => return error.into(),
+            _ => {}
         }
     }
 
@@ -58,6 +79,11 @@ fn eval_statements(stmts: Vec<Statement>) -> ObjectEnum {
 
 fn eval_if_expression(expr: IfExpression) -> ObjectEnum {
     let cond = eval(expr.condition.into());
+
+    if let ObjectEnum::Return(_) = cond.clone() {
+        return cond;
+    }
+
     if is_truthy(&cond) {
         eval(expr.consequence.into())
     } else if !expr.alternative.statements.is_empty() {
@@ -78,7 +104,7 @@ fn eval_prefix_expression(operator: Token, right: ObjectEnum) -> ObjectEnum {
     match operator {
         Token::Bang => eval_bang_operator(right).into(),
         Token::Minus => eval_minus_operator(right),
-        _ => NULL.into(),
+        _ => Error::new(format!("Unkown operator: {} {}", operator, right)).into(),
     }
 }
 
@@ -87,8 +113,11 @@ fn eval_infix_expression(operator: Token, left: ObjectEnum, right: ObjectEnum) -
         (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => {
             eval_infix_integer_expression(operator, x, y)
         }
-        (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => Boolean(x == y).into(),
-        _ => NULL.into(),
+        (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => match operator {
+            Token::Equals | Token::NotEquals => Boolean(x == y).into(),
+            op => Error::new(format!("Unknown operator: {} {} {}", x, op, y)).into(),
+        },
+        (x, y) => Error::new(format!("Type mismatch: {} {} {}", x, operator, y)).into(),
     }
 }
 
@@ -102,7 +131,7 @@ fn eval_infix_integer_expression(operator: Token, left: Integer, right: Integer)
         Token::NotEquals => Boolean(left != right).into(),
         Token::Lt => Boolean(left.0 < right.0).into(),
         Token::Gt => Boolean(left.0 > right.0).into(),
-        _ => NULL.into(),
+        x => Error::new(format!("Unkown operator: {} {} {}", left, x, right)).into(),
     }
 }
 
@@ -126,7 +155,7 @@ fn eval_minus_operator(right: ObjectEnum) -> ObjectEnum {
             Integer(0) => Integer(0).into(),
             Integer(value) => Integer(-value).into(),
         },
-        _ => NULL.into(),
+        x => Error::new(format!("Unknown operator: {}{}", Token::Minus, x)).into(),
     }
 }
 
@@ -235,5 +264,32 @@ mod tests {
         ",
             "10",
         )
+    }
+
+    #[test]
+    fn test_error() {
+        test_program("5 + true;", "Type mismatch: INTEGER + BOOLEAN");
+
+        test_program("5 + true; 5;", "Type mismatch: INTEGER + BOOLEAN");
+
+        test_program("-true;", "Unknown operator: -BOOLEAN");
+
+        test_program("true + false;", "Unknown operator: BOOLEAN + BOOLEAN");
+
+        test_program(
+            "if (10 > 1) { true + false; };",
+            "Unknown operator: BOOLEAN + BOOLEAN",
+        );
+
+        test_program(
+            "
+        if (10 > 1) {
+          if (10 > 1) {
+            return true + false;
+          }
+        return 1; }
+        ",
+            "Unknown operator: BOOLEAN + BOOLEAN",
+        );
     }
 }
