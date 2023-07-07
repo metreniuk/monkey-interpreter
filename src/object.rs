@@ -5,6 +5,8 @@ use std::{
     fmt::{self, Display},
 };
 
+use crate::ast::{BlockStatement, Identifier};
+
 pub trait Inspectable {
     fn inspect(&self) -> String;
     fn inspect_type(&self) -> String;
@@ -17,6 +19,7 @@ pub enum ObjectEnum {
     Null(Null),
     Return(Box<ReturnValue>),
     Error(Error),
+    Function(Function),
 }
 
 impl Inspectable for ObjectEnum {
@@ -27,6 +30,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Null(obj) => Null::inspect(obj),
             ObjectEnum::Return(obj) => ReturnValue::inspect(obj),
             ObjectEnum::Error(obj) => Error::inspect(obj),
+            ObjectEnum::Function(obj) => Function::inspect(obj),
         }
     }
 
@@ -37,6 +41,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Null(obj) => Null::inspect_type(obj),
             ObjectEnum::Return(obj) => ReturnValue::inspect_type(obj),
             ObjectEnum::Error(obj) => Error::inspect_type(obj),
+            ObjectEnum::Function(obj) => Function::inspect_type(obj),
         }
     }
 }
@@ -87,6 +92,12 @@ impl From<ReturnValue> for ObjectEnum {
 impl From<Error> for ObjectEnum {
     fn from(value: Error) -> Self {
         ObjectEnum::Error(value)
+    }
+}
+
+impl From<Function> for ObjectEnum {
+    fn from(value: Function) -> Self {
+        ObjectEnum::Function(value)
     }
 }
 
@@ -181,19 +192,87 @@ impl Inspectable for Error {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub parameters: Vec<Identifier>,
+    pub body: BlockStatement,
+    pub env: Environment,
+}
+
+impl Function {
+    pub fn new(parameters: Vec<Identifier>, body: BlockStatement, env: Environment) -> Self {
+        Function {
+            parameters,
+            body,
+            env,
+        }
+    }
+}
+
+impl Inspectable for Function {
+    fn inspect(&self) -> String {
+        let mut buf = String::from("fn(");
+
+        let mut parameters_iter = self.parameters.clone().into_iter();
+        let first = parameters_iter.nth(0);
+
+        if let Some(param) = first {
+            buf.push_str(&format!("{}", param));
+        } else {
+            return buf;
+        }
+
+        for param in parameters_iter {
+            buf.push_str(&format!(",{}", param));
+        }
+
+        buf.push_str(") { ");
+
+        buf.push_str(&self.body.to_string());
+
+        buf.push_str(" }");
+
+        buf
+    }
+
+    fn inspect_type(&self) -> String {
+        self.inspect()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Environment {
     store: HashMap<String, ObjectEnum>,
+    outer: Option<Box<Environment>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Environment {
             store: HashMap::new(),
+            outer: None,
+        }
+    }
+
+    pub fn new_with_env(outer: Environment) -> Self {
+        Environment {
+            store: HashMap::new(),
+            outer: Some(Box::new(outer)),
         }
     }
 
     pub fn get(&self, key: String) -> Option<&ObjectEnum> {
-        self.store.get(&key)
+        let val = self.store.get(&key);
+
+        if let Some(v) = val {
+            return Some(v);
+        }
+
+        if let Some(outer) = &self.outer {
+            return outer.get(key);
+        }
+
+        return None;
     }
 
     pub fn set(&mut self, key: String, val: ObjectEnum) -> Option<ObjectEnum> {

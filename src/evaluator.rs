@@ -3,7 +3,7 @@
 use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
-    object::{Boolean, Environment, Error, Integer, Null, ObjectEnum, ReturnValue},
+    object::{Boolean, Environment, Error, Function, Integer, Null, ObjectEnum, ReturnValue},
 };
 
 const TRUE: Boolean = Boolean(true);
@@ -37,6 +37,21 @@ pub fn eval(node: Node, env: &mut Environment) -> ObjectEnum {
                 eval_infix_expression(expr.operator, left, right)
             }
             Expression::If(expr) => eval_if_expression(*expr, env),
+            Expression::Fn(function) => {
+                Function::new(function.parameters, function.body, env.clone()).into()
+            }
+            Expression::Call(node) => {
+                let fun = eval(node.function.into(), env);
+                if let ObjectEnum::Error(_) = fun {
+                    return fun;
+                }
+                let args = eval_expresssions(node.arguments, env);
+
+                match args {
+                    Result::Err(err) => err,
+                    Result::Ok(args) => apply_function(fun, args),
+                }
+            }
             _ => NULL.into(),
         },
         Node::Statement(stmt) => match stmt {
@@ -84,6 +99,48 @@ fn eval_statements(stmts: Vec<Statement>, env: &mut Environment) -> ObjectEnum {
     }
 
     obj
+}
+
+fn eval_expresssions(
+    expressions: Vec<Expression>,
+    env: &mut Environment,
+) -> Result<Vec<ObjectEnum>, ObjectEnum> {
+    let mut result = vec![];
+
+    for exp in expressions {
+        let evaluated = eval(exp.into(), env);
+        if let ObjectEnum::Return(_) = evaluated {
+            return Result::Err(evaluated);
+        }
+        result.push(evaluated);
+    }
+
+    Ok(result)
+}
+
+fn apply_function(fun: ObjectEnum, args: Vec<ObjectEnum>) -> ObjectEnum {
+    match fun {
+        ObjectEnum::Function(fun) => {
+            let mut env = extend_function_env(&fun, args);
+            let evaluated = eval(fun.body.into(), &mut env);
+            if let ObjectEnum::Return(val) = evaluated {
+                val.0
+            } else {
+                evaluated
+            }
+        }
+        x => return Error::new(format!("Not a function: {}", x)).into(),
+    }
+}
+
+fn extend_function_env(fun: &Function, args: Vec<ObjectEnum>) -> Environment {
+    let mut extended_env = Environment::new_with_env(fun.env.clone());
+
+    for (i, param) in fun.parameters.iter().enumerate() {
+        extended_env.set(param.to_string(), args[i].clone());
+    }
+
+    extended_env
 }
 
 fn eval_identifier(token: Token, env: &mut Environment) -> ObjectEnum {
@@ -318,5 +375,44 @@ mod tests {
         test_program("let a = 5 * 5; a;", "25");
         test_program("let a = 5; let b = a; b;", "5");
         test_program("let a = 5; let b = a; let c = a + b + 5; c;", "15");
+    }
+
+    #[test]
+    fn test_function() {
+        test_program("fn(x) { x + 2; };", "fn(x) { (x + 2) }")
+    }
+
+    #[test]
+    fn test_function_application() {
+        test_program("let identity = fn(x) { x; }; identity(5);", "5");
+        test_program("let identity = fn(x) { return x; }; identity(5);", "5");
+        test_program("let double = fn(x) { x * 2; }; double(5);", "10");
+        test_program("let add = fn(x, y) { x + y; }; add(5, 5);", "10");
+        test_program(
+            "let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));",
+            "20",
+        );
+        test_program("fn(x) { x; }(5)", "5");
+    }
+
+    #[test]
+    fn test_function_clojures() {
+        test_program(
+            "
+            let newAdder = fn(x) {
+                fn(y) { x + y };
+            };
+            let addTwo = newAdder(2);
+            addTwo(2);",
+            "4",
+        );
+        test_program(
+            "
+        let add = fn(a, b) { a + b };
+        let applyFunc = fn(a, b, func) { func(a, b) };
+        applyFunc(2, 2, add);
+        ",
+            "4",
+        )
     }
 }
