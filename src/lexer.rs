@@ -11,6 +11,7 @@ pub enum Token {
 
     Ident(String),
     Int(isize),
+    String(String),
 
     Assign,
     Plus,
@@ -48,6 +49,7 @@ impl Display for Token {
         match self {
             Token::Ident(x) => write!(f, "{}", x),
             Token::Int(x) => write!(f, "{}", x),
+            Token::String(x) => write!(f, "{}", x),
             Token::Illegal => write!(f, "Illegal"),
             Token::Eof => write!(f, "Eof"),
             Token::Assign => write!(f, "="),
@@ -80,97 +82,88 @@ impl Display for Token {
 }
 
 pub struct Lexer {
-    input: String,
+    input: Vec<u8>,
     postition: usize,
     read_position: usize,
-    ch: Option<char>,
+    ch: u8,
 }
 
 impl Lexer {
     pub fn new(input: String) -> Lexer {
         let mut l = Lexer {
-            input,
+            input: input.into_bytes(),
             postition: 0,
             read_position: 0,
-            ch: None,
+            ch: 0,
         };
         l.read_char();
         l
     }
 
     fn read_char(&mut self) {
-        self.ch = self.input.chars().nth(self.read_position);
+        if self.read_position >= self.input.len() {
+            self.ch = 0;
+        } else {
+            self.ch = self.input[self.read_position];
+        }
 
         self.postition = self.read_position;
         self.read_position += 1;
     }
 
-    fn peek_char(&self) -> Option<char> {
-        self.input.chars().nth(self.read_position)
+    fn peek_char(&self) -> u8 {
+        if self.read_position >= self.input.len() {
+            0
+        } else {
+            self.input[self.read_position]
+        }
     }
 
     fn skip_whitespace(&mut self) {
-        loop {
-            if let Some(ch) = self.ch {
-                if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-                    self.read_char()
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
+        while self.ch.is_ascii_whitespace() {
+            self.read_char()
         }
     }
 
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        let mut should_read_next = true;
-
         let token = match self.ch {
-            None => Token::Eof,
-            Some(c) => match c {
-                '=' => self.read_binary('=', Token::Equals, Token::Assign),
-                ';' => Token::Semicolon,
-                '(' => Token::LParen,
-                ')' => Token::RParen,
-                ',' => Token::Comma,
-                '+' => Token::Plus,
-                '-' => Token::Minus,
-                '!' => self.read_binary('=', Token::NotEquals, Token::Bang),
-                '*' => Token::Asterisk,
-                '/' => Token::Slash,
-                '<' => self.read_binary('=', Token::Lte, Token::Lt),
-                '>' => self.read_binary('=', Token::Gte, Token::Gt),
-                '{' => Token::LBrace,
-                '}' => Token::RBrace,
-                ch => {
-                    if is_letter(ch) {
-                        let literal = self.read_identifier();
-                        should_read_next = false;
-                        self.lookup_keyword(literal)
-                    } else if is_digit(ch) {
-                        let num = self.read_number();
-                        should_read_next = false;
-                        Token::Int(num)
-                    } else {
-                        Token::Illegal
-                    }
-                }
-            },
+            b'=' => self.read_binary(b'=', Token::Equals, Token::Assign),
+            b';' => Token::Semicolon,
+            b'(' => Token::LParen,
+            b')' => Token::RParen,
+            b',' => Token::Comma,
+            b'+' => Token::Plus,
+            b'-' => Token::Minus,
+            b'!' => self.read_binary(b'=', Token::NotEquals, Token::Bang),
+            b'*' => Token::Asterisk,
+            b'/' => Token::Slash,
+            b'<' => self.read_binary(b'=', Token::Lte, Token::Lt),
+            b'>' => self.read_binary(b'=', Token::Gte, Token::Gt),
+            b'{' => Token::LBrace,
+            b'}' => Token::RBrace,
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                let literal = self.read_identifier();
+                return self.lookup_keyword(literal);
+            }
+            b'0'..=b'9' => {
+                let num = self.read_number();
+                return Token::Int(num);
+            }
+            0 => Token::Eof,
+            _ => Token::Illegal,
         };
 
-        if should_read_next {
-            self.read_char();
-        }
+        self.read_char();
 
         token
     }
 
-    fn read_binary(&mut self, next: char, matched: Token, fallback: Token) -> Token {
+    fn read_binary(&mut self, next: u8, matched: Token, fallback: Token) -> Token {
         match self.peek_char() {
-            Some(next_ch) => {
+            0 => fallback,
+            next_ch => {
                 if next_ch == next {
                     self.read_char();
                     matched
@@ -178,26 +171,25 @@ impl Lexer {
                     fallback
                 }
             }
-            None => fallback,
         }
     }
 
     fn read_identifier(&mut self) -> String {
         let start_position = self.postition;
 
-        while is_letter(self.ch.unwrap()) {
+        while self.ch.is_ascii_alphabetic() || self.ch == b'_' {
             self.read_char();
         }
-        String::from(&self.input[start_position..self.postition])
+        String::from_utf8_lossy(&self.input[start_position..self.postition]).to_string()
     }
 
     fn read_number(&mut self) -> isize {
         let start_position = self.postition;
 
-        while is_digit(self.ch.unwrap()) {
+        while self.ch.is_ascii_digit() {
             self.read_char();
         }
-        let str = &self.input[start_position..self.postition];
+        let str = String::from_utf8_lossy(&self.input[start_position..self.postition]);
 
         str.parse().unwrap()
     }
@@ -218,14 +210,6 @@ impl Lexer {
     fn eof(&self) -> bool {
         true
     }
-}
-
-fn is_letter(ch: char) -> bool {
-    'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
-}
-
-fn is_digit(ch: char) -> bool {
-    '0' <= ch && ch <= '9'
 }
 
 #[cfg(test)]
@@ -456,4 +440,33 @@ mod tests {
 
         assert_eq!(output, expected);
     }
+
+    // #[test]
+    // fn test_next_token_string() {
+    //     let input = String::from(
+    //         "
+    //         \"foobar\"
+    //         \"foo bar\"
+    //         ",
+    //     );
+    //     let mut output: Vec<Token> = vec![];
+
+    //     let mut l = Lexer::new(input);
+
+    //     loop {
+    //         let token: Token = l.next_token();
+    //         output.push(token.clone());
+    //         if token == Token::Eof {
+    //             break;
+    //         }
+    //     }
+
+    //     let expected = vec![
+    //         Token::String(String::from("foobar")),
+    //         Token::String(String::from("foo bar")),
+    //         Token::Eof,
+    //     ];
+
+    //     assert_eq!(output, expected);
+    // }
 }
