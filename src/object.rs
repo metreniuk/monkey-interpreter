@@ -15,6 +15,7 @@ pub trait Inspectable {
 #[derive(Debug, Clone)]
 pub enum ObjectEnum {
     Integer(Integer),
+    String(StringObj),
     Boolean(Boolean),
     Null(Null),
     Return(Box<ReturnValue>),
@@ -26,6 +27,7 @@ impl Inspectable for ObjectEnum {
     fn inspect(&self) -> String {
         match self {
             ObjectEnum::Integer(obj) => Integer::inspect(obj),
+            ObjectEnum::String(obj) => StringObj::inspect(obj),
             ObjectEnum::Boolean(obj) => Boolean::inspect(obj),
             ObjectEnum::Null(obj) => Null::inspect(obj),
             ObjectEnum::Return(obj) => ReturnValue::inspect(obj),
@@ -37,6 +39,7 @@ impl Inspectable for ObjectEnum {
     fn inspect_type(&self) -> String {
         match self {
             ObjectEnum::Integer(obj) => Integer::inspect_type(obj),
+            ObjectEnum::String(obj) => StringObj::inspect_type(obj),
             ObjectEnum::Boolean(obj) => Boolean::inspect_type(obj),
             ObjectEnum::Null(obj) => Null::inspect_type(obj),
             ObjectEnum::Return(obj) => ReturnValue::inspect_type(obj),
@@ -101,6 +104,12 @@ impl From<Function> for ObjectEnum {
     }
 }
 
+impl From<StringObj> for ObjectEnum {
+    fn from(value: StringObj) -> Self {
+        ObjectEnum::String(value)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Integer(pub isize);
 
@@ -115,6 +124,25 @@ impl Inspectable for Integer {
 }
 
 impl Display for Integer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inspect_type())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct StringObj(pub String);
+
+impl Inspectable for StringObj {
+    fn inspect(&self) -> String {
+        format!("{}", self.0)
+    }
+
+    fn inspect_type(&self) -> String {
+        format!("STRING")
+    }
+}
+
+impl Display for StringObj {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inspect_type())
     }

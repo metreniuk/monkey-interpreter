@@ -218,6 +218,7 @@ impl Parser {
                 .map(|prefix_exp| Expression::Prefix(prefix_exp)),
             Token::Ident(_) => Ok(self.parse_identifier()),
             Token::Int(_) => Ok(self.parse_integer_literal()),
+            Token::String(_) => Ok(self.parse_string_literal()),
             Token::LParen => self.parse_grouped_expression(),
             Token::If => self.parse_if_expression(),
             Token::Function => self.parse_function_literal(),
@@ -355,6 +356,10 @@ impl Parser {
         Expression::IntegerLiteral(self.curr_token.clone())
     }
 
+    fn parse_string_literal(&self) -> Expression {
+        Expression::StringLiteral(self.curr_token.clone())
+    }
+
     fn parse_boolean_literal(&self) -> Expression {
         Expression::BooleanLiteral(self.curr_token.clone())
     }
@@ -465,6 +470,7 @@ mod tests {
         let input = "
         let x = 5;
         let y = 10 + 5;
+        let z = \"foo\";
         let foobar = 838383;
         ";
         let l = Lexer::new(String::from(input));
@@ -475,7 +481,6 @@ mod tests {
             panic!("Parsing errors: {}", format_errors(p.errors));
         }
 
-        assert!(program.statements.len() == 3);
         assert_eq!(
             program.statements[0],
             Statement::Let(LetStatement {
@@ -496,6 +501,13 @@ mod tests {
         );
         assert_eq!(
             program.statements[2],
+            Statement::Let(LetStatement {
+                name: Identifier(Token::Ident(String::from("z"))),
+                value: Expression::StringLiteral(Token::String(String::from("foo")))
+            })
+        );
+        assert_eq!(
+            program.statements[3],
             Statement::Let(LetStatement {
                 name: Identifier(Token::Ident(String::from("foobar"))),
                 value: Expression::IntegerLiteral(Token::Int(838383))
@@ -576,6 +588,27 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::Expression(Expression::IntegerLiteral(Token::Int(5)))
+        );
+    }
+
+    #[test]
+    fn test_expr_string() {
+        let input = "
+        \"fooo\";
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::StringLiteral(Token::String(String::from(
+                "fooo"
+            ))))
         );
     }
 

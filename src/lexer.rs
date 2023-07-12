@@ -143,6 +143,10 @@ impl Lexer {
             b'>' => self.read_binary(b'=', Token::Gte, Token::Gt),
             b'{' => Token::LBrace,
             b'}' => Token::RBrace,
+            b'"' => {
+                let literal = self.read_string();
+                Token::String(literal)
+            }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 let literal = self.read_identifier();
                 return self.lookup_keyword(literal);
@@ -192,6 +196,16 @@ impl Lexer {
         let str = String::from_utf8_lossy(&self.input[start_position..self.postition]);
 
         str.parse().unwrap()
+    }
+
+    fn read_string(&mut self) -> String {
+        let start_pos = self.postition + 1;
+        self.read_char();
+
+        while self.ch != 0 && self.ch != b'"' {
+            self.read_char()
+        }
+        String::from_utf8_lossy(&self.input[start_pos..self.postition]).to_string()
     }
 
     fn lookup_keyword(&self, str: String) -> Token {
@@ -441,32 +455,32 @@ mod tests {
         assert_eq!(output, expected);
     }
 
-    // #[test]
-    // fn test_next_token_string() {
-    //     let input = String::from(
-    //         "
-    //         \"foobar\"
-    //         \"foo bar\"
-    //         ",
-    //     );
-    //     let mut output: Vec<Token> = vec![];
+    #[test]
+    fn test_next_token_string() {
+        let input = String::from(
+            "
+            \"foobar\"
+            \"foo bar\"
+            ",
+        );
+        let mut output: Vec<Token> = vec![];
 
-    //     let mut l = Lexer::new(input);
+        let mut l = Lexer::new(input);
 
-    //     loop {
-    //         let token: Token = l.next_token();
-    //         output.push(token.clone());
-    //         if token == Token::Eof {
-    //             break;
-    //         }
-    //     }
+        loop {
+            let token: Token = l.next_token();
+            output.push(token.clone());
+            if token == Token::Eof {
+                break;
+            }
+        }
 
-    //     let expected = vec![
-    //         Token::String(String::from("foobar")),
-    //         Token::String(String::from("foo bar")),
-    //         Token::Eof,
-    //     ];
+        let expected = vec![
+            Token::String(String::from("foobar")),
+            Token::String(String::from("foo bar")),
+            Token::Eof,
+        ];
 
-    //     assert_eq!(output, expected);
-    // }
+        assert_eq!(output, expected);
+    }
 }

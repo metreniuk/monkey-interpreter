@@ -70,6 +70,7 @@ impl Display for Statement {
 pub enum Expression {
     Ident(Token),
     IntegerLiteral(Token),
+    StringLiteral(Token),
     BooleanLiteral(Token),
     Fn(FunctionLiteral),
     Prefix(Box<PrefixExpression>),
@@ -83,6 +84,7 @@ impl Display for Expression {
         match self {
             Expression::Ident(t) => write!(f, "{}", t),
             Expression::IntegerLiteral(t) => write!(f, "{}", t),
+            Expression::StringLiteral(t) => write!(f, "{}", t),
             Expression::BooleanLiteral(t) => write!(f, "{}", t),
             Expression::Fn(x) => write!(f, "{}", x),
             Expression::Prefix(x) => write!(f, "{}", x),

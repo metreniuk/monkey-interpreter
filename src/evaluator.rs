@@ -3,7 +3,9 @@
 use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
-    object::{Boolean, Environment, Error, Function, Integer, Null, ObjectEnum, ReturnValue},
+    object::{
+        Boolean, Environment, Error, Function, Integer, Null, ObjectEnum, ReturnValue, StringObj,
+    },
 };
 
 const TRUE: Boolean = Boolean(true);
@@ -14,6 +16,7 @@ pub fn eval(node: Node, env: &mut Environment) -> ObjectEnum {
     match node {
         Node::Expression(exp) => match exp {
             Expression::IntegerLiteral(Token::Int(value)) => Integer(value).into(),
+            Expression::StringLiteral(Token::String(value)) => StringObj(value).into(),
             // TODO: make boolean literal contain only true and false
             Expression::BooleanLiteral(Token::True) => TRUE.into(),
             Expression::BooleanLiteral(Token::False) => FALSE.into(),
@@ -192,6 +195,9 @@ fn eval_infix_expression(operator: Token, left: ObjectEnum, right: ObjectEnum) -
         (ObjectEnum::Integer(x), ObjectEnum::Integer(y)) => {
             eval_infix_integer_expression(operator, x, y)
         }
+        (ObjectEnum::String(x), ObjectEnum::String(y)) => {
+            eval_infix_string_expression(operator, x, y)
+        }
         (ObjectEnum::Boolean(x), ObjectEnum::Boolean(y)) => match operator {
             Token::Equals | Token::NotEquals => Boolean(x == y).into(),
             op => Error::new(format!("Unknown operator: {} {} {}", x, op, y)).into(),
@@ -210,7 +216,14 @@ fn eval_infix_integer_expression(operator: Token, left: Integer, right: Integer)
         Token::NotEquals => Boolean(left != right).into(),
         Token::Lt => Boolean(left.0 < right.0).into(),
         Token::Gt => Boolean(left.0 > right.0).into(),
-        x => Error::new(format!("Unkown operator: {} {} {}", left, x, right)).into(),
+        x => Error::new(format!("Unknown operator: {} {} {}", left, x, right)).into(),
+    }
+}
+
+fn eval_infix_string_expression(operator: Token, left: StringObj, right: StringObj) -> ObjectEnum {
+    match operator {
+        Token::Plus => StringObj(left.0 + &right.0).into(),
+        x => Error::new(format!("Unknown operator: {} {} {}", left, x, right)).into(),
     }
 }
 
@@ -261,6 +274,11 @@ mod tests {
     }
 
     #[test]
+    fn test_string() {
+        test_program("\"foo\";", "foo");
+    }
+
+    #[test]
     fn test_infix_integer_expression() {
         test_program("5;", "5");
         test_program("10;", "10");
@@ -277,6 +295,11 @@ mod tests {
         test_program("3 * 3 * 3 + 10;", "37");
         test_program("3 * (3 * 3) + 10;", "37");
         test_program("(5 + 10 * 2 + 15 / 3) * 2 + -10;", "50");
+    }
+
+    #[test]
+    fn test_infix_string_expression() {
+        test_program("\"foo\" + \" \" + \"bar\"", "foo bar");
     }
 
     #[test]
@@ -350,6 +373,9 @@ mod tests {
     fn test_error() {
         test_program("5 + true;", "Type mismatch: INTEGER + BOOLEAN");
         test_program("5 + true; 5;", "Type mismatch: INTEGER + BOOLEAN");
+        test_program("5 + \"foo\";", "Type mismatch: INTEGER + STRING");
+        test_program("\"foo\" + true;", "Type mismatch: STRING + BOOLEAN");
+        test_program("\"foo\" - \"bar\";", "Unknown operator: STRING - STRING");
         test_program("-true;", "Unknown operator: -BOOLEAN");
         test_program("true + false;", "Unknown operator: BOOLEAN + BOOLEAN");
         test_program(
