@@ -21,6 +21,7 @@ pub enum ObjectEnum {
     Return(Box<ReturnValue>),
     Error(Error),
     Function(Function),
+    BuiltIn(BuiltIn),
 }
 
 impl Inspectable for ObjectEnum {
@@ -33,6 +34,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Return(obj) => ReturnValue::inspect(obj),
             ObjectEnum::Error(obj) => Error::inspect(obj),
             ObjectEnum::Function(obj) => Function::inspect(obj),
+            ObjectEnum::BuiltIn(obj) => BuiltIn::inspect(obj),
         }
     }
 
@@ -45,6 +47,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Return(obj) => ReturnValue::inspect_type(obj),
             ObjectEnum::Error(obj) => Error::inspect_type(obj),
             ObjectEnum::Function(obj) => Function::inspect_type(obj),
+            ObjectEnum::BuiltIn(obj) => BuiltIn::inspect_type(obj),
         }
     }
 }
@@ -107,6 +110,12 @@ impl From<Function> for ObjectEnum {
 impl From<StringObj> for ObjectEnum {
     fn from(value: StringObj) -> Self {
         ObjectEnum::String(value)
+    }
+}
+
+impl From<BuiltIn> for ObjectEnum {
+    fn from(value: BuiltIn) -> Self {
+        ObjectEnum::BuiltIn(value)
     }
 }
 
@@ -261,6 +270,30 @@ impl Inspectable for Function {
         buf.push_str(" }");
 
         buf
+    }
+
+    fn inspect_type(&self) -> String {
+        self.inspect()
+    }
+}
+
+pub type BulitinFunction = fn(Vec<ObjectEnum>) -> ObjectEnum;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BuiltIn {
+    name: String,
+    pub fun: BulitinFunction,
+}
+
+impl BuiltIn {
+    pub fn new(name: String, fun: BulitinFunction) -> Self {
+        BuiltIn { name, fun }
+    }
+}
+
+impl Inspectable for BuiltIn {
+    fn inspect(&self) -> String {
+        format!("BUILTIN {}", self.name)
     }
 
     fn inspect_type(&self) -> String {

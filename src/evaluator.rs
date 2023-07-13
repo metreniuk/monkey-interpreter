@@ -4,13 +4,40 @@ use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
     object::{
-        Boolean, Environment, Error, Function, Integer, Null, ObjectEnum, ReturnValue, StringObj,
+        Boolean, BuiltIn, Environment, Error, Function, Inspectable, Integer, Null, ObjectEnum,
+        ReturnValue, StringObj,
     },
 };
 
 const TRUE: Boolean = Boolean(true);
 const FALSE: Boolean = Boolean(false);
 const NULL: Null = Null {};
+
+fn builtin_len(args: Vec<ObjectEnum>) -> ObjectEnum {
+    if args.len() != 1 {
+        return Error::new(format!(
+            "wrong number of arguments. got={}, want=1",
+            args.len()
+        ))
+        .into();
+    }
+
+    match args.first().unwrap().clone() {
+        ObjectEnum::String(x) => Integer(x.0.len().try_into().unwrap()).into(),
+        x => Error::new(format!(
+            "argument to \"len\" not supported, got {}",
+            x.inspect_type()
+        ))
+        .into(),
+    }
+}
+
+fn get_builtin(name: String) -> Option<BuiltIn> {
+    match name.as_str() {
+        "len" => Some(BuiltIn::new("len".into(), builtin_len)),
+        _ => None,
+    }
+}
 
 pub fn eval(node: Node, env: &mut Environment) -> ObjectEnum {
     match node {
@@ -132,6 +159,10 @@ fn apply_function(fun: ObjectEnum, args: Vec<ObjectEnum>) -> ObjectEnum {
                 evaluated
             }
         }
+        ObjectEnum::BuiltIn(x) => {
+            let fun_to_call = x.fun;
+            fun_to_call(args)
+        }
         x => return Error::new(format!("Not a function: {}", x)).into(),
     }
 }
@@ -151,6 +182,8 @@ fn eval_identifier(token: Token, env: &mut Environment) -> ObjectEnum {
         let val = env.get(name.clone());
         if let Some(v) = val {
             v.clone()
+        } else if let Some(builtin) = get_builtin(name.clone()) {
+            builtin.into()
         } else {
             Error::new(format!("Identifier not found: {}", name)).into()
         }
@@ -440,5 +473,17 @@ mod tests {
         ",
             "4",
         )
+    }
+
+    #[test]
+    fn test_builtin_len() {
+        test_program("len(\"\")", "0");
+        test_program("len(\"four\")", "4");
+        test_program("len(\"hello world\")", "11");
+        test_program("len(1)", "argument to \"len\" not supported, got INTEGER");
+        test_program(
+            "len(\"one\", \"two\")",
+            "wrong number of arguments. got=2, want=1",
+        );
     }
 }
