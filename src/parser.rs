@@ -40,6 +40,7 @@ impl Parser {
         hm.insert(Token::Slash, Precedence::Product);
         hm.insert(Token::Asterisk, Precedence::Product);
         hm.insert(Token::LParen, Precedence::Call);
+        hm.insert(Token::LBracket, Precedence::PropertyAccess);
 
         hm
     }
@@ -136,8 +137,10 @@ impl Parser {
             Ok(mut left) => {
                 while !self.peek_token_is(Token::Semicolon) && precedence < self.peek_precedence() {
                     let t = self.has_peek_infix_parse()?;
+
                     self.next_token();
                     let l = left.clone();
+
                     left = match self.parse_infix_expression(left, t) {
                         Ok(x) => x,
                         Err(_) => return Some(l),
@@ -176,6 +179,12 @@ impl Parser {
                     arguments,
                 }))
             }),
+            Token::LBracket => self.parse_property_access().map(|property| {
+                Expression::PropertyAccess(Box::new(PropertyAccess {
+                    object: left,
+                    property,
+                }))
+            }),
             // infix operator
             _ => {
                 let precedence = self.curr_precedence();
@@ -205,6 +214,7 @@ impl Parser {
             | Token::Equals
             | Token::NotEquals
             | Token::LParen
+            | Token::LBracket
             | Token::Lt
             | Token::Gt => Some(self.peek_token.clone()),
             _ => None,
@@ -216,10 +226,11 @@ impl Parser {
             Token::Bang | Token::Minus => self
                 .parse_prefix_inner()
                 .map(|prefix_exp| Expression::Prefix(prefix_exp)),
-            Token::Ident(_) => Ok(self.parse_identifier()),
             Token::Int(_) => Ok(self.parse_integer_literal()),
             Token::String(_) => Ok(self.parse_string_literal()),
             Token::LParen => self.parse_grouped_expression(),
+            Token::LBracket => self.parse_array_expression(),
+            Token::Ident(_) => Ok(self.parse_identifier()),
             Token::If => self.parse_if_expression(),
             Token::Function => self.parse_function_literal(),
             Token::True | Token::False => Ok(self.parse_boolean_literal()),
@@ -346,6 +357,53 @@ impl Parser {
         self.expect_peek_(Token::RParen)?;
 
         Ok(args)
+    }
+
+    fn parse_array_expression(&mut self) -> Result<Expression, Token> {
+        let elements = self.parse_array_elements()?;
+
+        Ok(Expression::Array(Box::new(Array { elements })))
+    }
+
+    fn parse_array_elements(&mut self) -> Result<Vec<Expression>, Token> {
+        let mut elements = vec![];
+
+        if self.peek_token_is(Token::RBracket) {
+            self.next_token();
+            return Ok(elements);
+        }
+
+        self.next_token();
+
+        elements.push(
+            self.parse_expression(Precedence::Lowest)
+                .ok_or(self.curr_token.clone())?,
+        );
+
+        while self.peek_token_is(Token::Comma) {
+            self.next_token();
+            self.next_token();
+
+            elements.push(
+                self.parse_expression(Precedence::Lowest)
+                    .ok_or(self.curr_token.clone())?,
+            );
+        }
+
+        self.expect_peek_(Token::RBracket)?;
+
+        Ok(elements)
+    }
+
+    fn parse_property_access(&mut self) -> Result<Expression, Token> {
+        self.next_token();
+
+        let expr = self
+            .parse_expression(Precedence::Lowest)
+            .ok_or(self.curr_token.clone())?;
+
+        self.expect_peek_(Token::RBracket)?;
+        Ok(expr)
     }
 
     fn parse_identifier(&self) -> Expression {
@@ -951,10 +1009,6 @@ mod tests {
         a(x + y, 2 - b());
         fn() { 1; }();
         ";
-        // a();
-        // a(1, x);
-        // a(x + y, 2 - b());
-        // fn() { 1; }();
         let l = Lexer::new(String::from(input));
         let mut p = Parser::new(l);
         let program = p.parse_program();
@@ -1013,6 +1067,85 @@ mod tests {
                         ))]
                     }
                 })
+            })))
+        );
+    }
+
+    #[test]
+    fn test_array() {
+        let input = "
+        [1, \"2\", 3 + 3, fn(x) { x }, add(2, 2)]
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::Array(Box::new(Array {
+                elements: vec![
+                    Expression::IntegerLiteral(Token::Int(1)),
+                    Expression::StringLiteral(Token::String("2".to_string())),
+                    Expression::Operation(Box::new(InfixExpression {
+                        operator: Token::Plus,
+                        left: Expression::IntegerLiteral(Token::Int(3)),
+                        right: Expression::IntegerLiteral(Token::Int(3))
+                    })),
+                    Expression::Fn(FunctionLiteral {
+                        parameters: vec![Identifier(Token::Ident(String::from("x")))],
+                        body: BlockStatement {
+                            statements: vec![Statement::Expression(Expression::Ident(
+                                Token::Ident(String::from("x"))
+                            ))]
+                        }
+                    }),
+                    Expression::Call(Box::new(CallExpression {
+                        arguments: vec![
+                            Expression::IntegerLiteral(Token::Int(2)),
+                            Expression::IntegerLiteral(Token::Int(2)),
+                        ],
+                        function: Expression::Ident(Token::Ident(String::from("add")))
+                    }))
+                ]
+            })))
+        );
+    }
+
+    #[test]
+    fn test_array_access() {
+        let input = "
+        arr[0];
+        arr[1 + a];
+        ";
+        let l = Lexer::new(String::from(input));
+        let mut p = Parser::new(l);
+        let program = p.parse_program();
+
+        if !p.errors.is_empty() {
+            panic!("Parsing errors: {}", format_errors(p.errors));
+        }
+
+        assert_eq!(
+            program.statements[0],
+            Statement::Expression(Expression::PropertyAccess(Box::new(PropertyAccess {
+                property: Expression::IntegerLiteral(Token::Int(0)),
+                object: Expression::Ident(Token::Ident("arr".to_string()))
+            })))
+        );
+
+        assert_eq!(
+            program.statements[1],
+            Statement::Expression(Expression::PropertyAccess(Box::new(PropertyAccess {
+                property: Expression::Operation(Box::new(InfixExpression {
+                    operator: Token::Plus,
+                    left: Expression::IntegerLiteral(Token::Int(1)),
+                    right: Expression::Ident(Token::Ident("a".to_string()))
+                })),
+                object: Expression::Ident(Token::Ident("arr".to_string()))
             })))
         );
     }

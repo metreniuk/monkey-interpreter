@@ -22,6 +22,7 @@ pub enum ObjectEnum {
     Error(Error),
     Function(Function),
     BuiltIn(BuiltIn),
+    Array(Array),
 }
 
 impl Inspectable for ObjectEnum {
@@ -35,6 +36,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Error(obj) => Error::inspect(obj),
             ObjectEnum::Function(obj) => Function::inspect(obj),
             ObjectEnum::BuiltIn(obj) => BuiltIn::inspect(obj),
+            ObjectEnum::Array(obj) => Array::inspect(obj),
         }
     }
 
@@ -48,6 +50,7 @@ impl Inspectable for ObjectEnum {
             ObjectEnum::Error(obj) => Error::inspect_type(obj),
             ObjectEnum::Function(obj) => Function::inspect_type(obj),
             ObjectEnum::BuiltIn(obj) => BuiltIn::inspect_type(obj),
+            ObjectEnum::Array(obj) => Array::inspect_type(obj),
         }
     }
 }
@@ -116,6 +119,12 @@ impl From<StringObj> for ObjectEnum {
 impl From<BuiltIn> for ObjectEnum {
     fn from(value: BuiltIn) -> Self {
         ObjectEnum::BuiltIn(value)
+    }
+}
+
+impl From<Array> for ObjectEnum {
+    fn from(value: Array) -> Self {
+        ObjectEnum::Array(value)
     }
 }
 
@@ -230,6 +239,44 @@ impl Inspectable for Error {
 }
 
 #[derive(Debug, Clone)]
+pub struct Array {
+    pub elements: Vec<ObjectEnum>,
+}
+
+impl Array {
+    pub fn new(elements: Vec<ObjectEnum>) -> Self {
+        Array { elements }
+    }
+}
+
+impl Inspectable for Array {
+    fn inspect(&self) -> String {
+        let mut buf = String::from("[");
+
+        let mut elements_iter = self.elements.clone().into_iter();
+        let first = elements_iter.nth(0);
+
+        if let Some(elem) = first {
+            buf.push_str(&format!("{}", elem.inspect()));
+        } else {
+            return buf;
+        }
+
+        for elem in elements_iter {
+            buf.push_str(&format!(", {}", elem.inspect()));
+        }
+
+        buf.push_str("]");
+
+        buf
+    }
+
+    fn inspect_type(&self) -> String {
+        self.inspect()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub parameters: Vec<Identifier>,
     pub body: BlockStatement,
@@ -303,8 +350,8 @@ impl Inspectable for BuiltIn {
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    store: HashMap<String, ObjectEnum>,
-    outer: Option<Box<Environment>>,
+    pub store: HashMap<String, ObjectEnum>,
+    pub outer: Option<Box<Environment>>,
 }
 
 impl Environment {
@@ -338,5 +385,20 @@ impl Environment {
 
     pub fn set(&mut self, key: String, val: ObjectEnum) -> Option<ObjectEnum> {
         self.store.insert(key, val)
+    }
+
+    pub fn print_values(&self) {
+        println!("Env values");
+        let mut this = self.clone();
+
+        loop {
+            for (key, val) in this.store.iter() {
+                println!("{} {}", key, val.inspect_type())
+            }
+            if this.outer.is_none() {
+                break;
+            }
+            this = *this.outer.unwrap()
+        }
     }
 }

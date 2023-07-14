@@ -34,6 +34,8 @@ pub enum Token {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
 
     Function,
     Let,
@@ -70,6 +72,8 @@ impl Display for Token {
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
+            Token::LBracket => write!(f, "["),
+            Token::RBracket => write!(f, "]"),
             Token::Function => write!(f, "fn"),
             Token::Let => write!(f, "let"),
             Token::If => write!(f, "if"),
@@ -143,6 +147,8 @@ impl Lexer {
             b'>' => self.read_binary(b'=', Token::Gte, Token::Gt),
             b'{' => Token::LBrace,
             b'}' => Token::RBrace,
+            b'[' => Token::LBracket,
+            b']' => Token::RBracket,
             b'"' => {
                 let literal = self.read_string();
                 Token::String(literal)
@@ -478,6 +484,39 @@ mod tests {
         let expected = vec![
             Token::String(String::from("foobar")),
             Token::String(String::from("foo bar")),
+            Token::Eof,
+        ];
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_next_token_array() {
+        let input = String::from(
+            "
+            [1, 2, 3]
+            ",
+        );
+        let mut output: Vec<Token> = vec![];
+
+        let mut l = Lexer::new(input);
+
+        loop {
+            let token: Token = l.next_token();
+            output.push(token.clone());
+            if token == Token::Eof {
+                break;
+            }
+        }
+
+        let expected = vec![
+            Token::LBracket,
+            Token::Int(1),
+            Token::Comma,
+            Token::Int(2),
+            Token::Comma,
+            Token::Int(3),
+            Token::RBracket,
             Token::Eof,
         ];
 

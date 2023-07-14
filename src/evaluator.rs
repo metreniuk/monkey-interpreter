@@ -4,8 +4,8 @@ use crate::{
     ast::{Expression, IfExpression, Node, Statement},
     lexer::Token,
     object::{
-        Boolean, BuiltIn, Environment, Error, Function, Inspectable, Integer, Null, ObjectEnum,
-        ReturnValue, StringObj,
+        Array, Boolean, BuiltIn, Environment, Error, Function, Inspectable, Integer, Null,
+        ObjectEnum, ReturnValue, StringObj,
     },
 };
 
@@ -16,7 +16,7 @@ const NULL: Null = Null {};
 fn builtin_len(args: Vec<ObjectEnum>) -> ObjectEnum {
     if args.len() != 1 {
         return Error::new(format!(
-            "wrong number of arguments. got={}, want=1",
+            "Wrong number of arguments. got={}, want=1",
             args.len()
         ))
         .into();
@@ -24,9 +24,98 @@ fn builtin_len(args: Vec<ObjectEnum>) -> ObjectEnum {
 
     match args.first().unwrap().clone() {
         ObjectEnum::String(x) => Integer(x.0.len().try_into().unwrap()).into(),
+        ObjectEnum::Array(arr) => Integer(arr.elements.len().try_into().unwrap()).into(),
         x => Error::new(format!(
-            "argument to \"len\" not supported, got {}",
+            "Argument to \"len\" not supported, got {}",
             x.inspect_type()
+        ))
+        .into(),
+    }
+}
+
+fn builtin_first(args: Vec<ObjectEnum>) -> ObjectEnum {
+    if args.len() != 1 {
+        return Error::new(format!(
+            "Wrong number of arguments. got={}, want=1",
+            args.len()
+        ))
+        .into();
+    }
+
+    match args.first().unwrap().clone() {
+        ObjectEnum::Array(arr) => match arr.elements.first() {
+            None => Error::new(format!("Called \"first\" on an empty array",)).into(),
+            Some(first) => first.clone().into(),
+        },
+        x => Error::new(format!(
+            "Argument to \"first\" not supported, got {}",
+            x.inspect_type()
+        ))
+        .into(),
+    }
+}
+
+fn builtin_last(args: Vec<ObjectEnum>) -> ObjectEnum {
+    if args.len() != 1 {
+        return Error::new(format!(
+            "Wrong number of arguments. got={}, want=1",
+            args.len()
+        ))
+        .into();
+    }
+
+    match args.first().unwrap().clone() {
+        ObjectEnum::Array(arr) => match arr.elements.last() {
+            None => Error::new(format!("Called \"last\" on an empty array",)).into(),
+            Some(last) => last.clone().into(),
+        },
+        x => Error::new(format!(
+            "Argument to \"last\" not supported, got {}",
+            x.inspect_type()
+        ))
+        .into(),
+    }
+}
+
+fn builtin_rest(args: Vec<ObjectEnum>) -> ObjectEnum {
+    if args.len() != 1 {
+        return Error::new(format!(
+            "Wrong number of arguments. got={}, want=1",
+            args.len()
+        ))
+        .into();
+    }
+
+    match args.first().unwrap().clone() {
+        ObjectEnum::Array(arr) => match arr.elements.split_first() {
+            None => Error::new(format!("Called \"rest\" on an empty array",)).into(),
+            Some((_, rest)) => Array::new(rest.to_vec()).into(),
+        },
+        x => Error::new(format!(
+            "Argument to \"rest\" not supported, got {}",
+            x.inspect_type()
+        ))
+        .into(),
+    }
+}
+
+fn builtin_push(args: Vec<ObjectEnum>) -> ObjectEnum {
+    if args.len() != 2 {
+        return Error::new(format!(
+            "Wrong number of arguments. got={}, want=2",
+            args.len()
+        ))
+        .into();
+    }
+
+    match (args.first().unwrap().clone(), args.get(1).unwrap().clone()) {
+        (ObjectEnum::Array(mut arr), el) => {
+            arr.elements.push(el);
+            arr.into()
+        }
+        (arr, _) => Error::new(format!(
+            "Argument to \"push\" not supported, got {}",
+            arr.inspect_type()
         ))
         .into(),
     }
@@ -35,6 +124,10 @@ fn builtin_len(args: Vec<ObjectEnum>) -> ObjectEnum {
 fn get_builtin(name: String) -> Option<BuiltIn> {
     match name.as_str() {
         "len" => Some(BuiltIn::new("len".into(), builtin_len)),
+        "first" => Some(BuiltIn::new("first".into(), builtin_first)),
+        "last" => Some(BuiltIn::new("last".into(), builtin_last)),
+        "rest" => Some(BuiltIn::new("rest".into(), builtin_rest)),
+        "push" => Some(BuiltIn::new("push".into(), builtin_push)),
         _ => None,
     }
 }
@@ -49,6 +142,24 @@ pub fn eval(node: Node, env: &mut Environment) -> ObjectEnum {
             Expression::BooleanLiteral(Token::False) => FALSE.into(),
             // TODO: make ident contain only token for ident
             Expression::Ident(token) => eval_identifier(token, env),
+            Expression::Array(arr) => {
+                let elements = eval_expresssions(arr.elements, env);
+                match elements {
+                    Result::Err(err) => err,
+                    Result::Ok(els) => Array::new(els).into(),
+                }
+            }
+            Expression::PropertyAccess(property_access) => {
+                let obj = eval(property_access.object.into(), env);
+                if let ObjectEnum::Error(_) = obj {
+                    return obj;
+                }
+
+                match eval(property_access.property.into(), env) {
+                    ObjectEnum::Error(err) => err.into(),
+                    prop => apply_property_access(obj, prop),
+                }
+            }
             Expression::Prefix(expr) => {
                 let right = eval(expr.right.into(), env);
                 if let ObjectEnum::Return(_) = right.clone() {
@@ -148,10 +259,24 @@ fn eval_expresssions(
     Ok(result)
 }
 
+fn apply_property_access(obj: ObjectEnum, prop: ObjectEnum) -> ObjectEnum {
+    match (obj, prop) {
+        (ObjectEnum::Array(arr), ObjectEnum::Integer(index)) => {
+            match arr.elements.get(index.0 as usize).clone() {
+                None => Error::new(format!("Wrong index access: tried={}", index.0)).into(),
+                Some(val) => val.clone(),
+            }
+        }
+        (x, _) => return Error::new(format!("Not a function: {}", x)).into(),
+    }
+}
+
 fn apply_function(fun: ObjectEnum, args: Vec<ObjectEnum>) -> ObjectEnum {
     match fun {
         ObjectEnum::Function(fun) => {
             let mut env = extend_function_env(&fun, args);
+            println!("FUNC {:?}", fun.parameters);
+            env.print_values();
             let evaluated = eval(fun.body.into(), &mut env);
             if let ObjectEnum::Return(val) = evaluated {
                 val.0
@@ -426,6 +551,11 @@ mod tests {
             "Unknown operator: BOOLEAN + BOOLEAN",
         );
         test_program("foobar;", "Identifier not found: foobar");
+        test_program("let arr = [1, 2, 3]; arr[5]", "Wrong index access: tried=5");
+        test_program(
+            "let arr = [1, 2, 3]; arr[-1]",
+            "Wrong index access: tried=-1",
+        );
     }
 
     #[test]
@@ -476,14 +606,73 @@ mod tests {
     }
 
     #[test]
+    fn test_array() {
+        test_program("let arr = [1, 2, 3]", "[1, 2, 3]");
+        test_program("let arr = [1, 2, 3]; arr[2]", "3");
+        test_program("let a = 2; let arr = [1, 2, 5, 6]; arr[0 + a]", "5");
+    }
+
+    #[test]
     fn test_builtin_len() {
         test_program("len(\"\")", "0");
         test_program("len(\"four\")", "4");
         test_program("len(\"hello world\")", "11");
-        test_program("len(1)", "argument to \"len\" not supported, got INTEGER");
+        test_program("len(1)", "Argument to \"len\" not supported, got INTEGER");
         test_program(
             "len(\"one\", \"two\")",
-            "wrong number of arguments. got=2, want=1",
+            "Wrong number of arguments. got=2, want=1",
         );
+        test_program("len([1, 2, 3, 4])", "4");
+    }
+
+    #[test]
+    fn test_builtin_first() {
+        test_program("first([1, 2, 3, 4])", "1");
+        test_program("first([])", "Called \"first\" on an empty array");
+    }
+
+    #[test]
+    fn test_builtin_last() {
+        test_program("last([1, 2, 3, 4])", "4");
+        test_program("last([])", "Called \"last\" on an empty array");
+    }
+
+    #[test]
+    fn test_builtin_rest() {
+        test_program("rest([1, 2, 3, 4])", "[2, 3, 4]");
+        test_program("rest([])", "Called \"rest\" on an empty array");
+    }
+
+    #[test]
+    fn test_builtin_push() {
+        test_program("push([1, 2, 3, 4], 1)", "[1, 2, 3, 4, 1]");
+        test_program(
+            "push(1, 1)",
+            "Argument to \"push\" not supported, got INTEGER",
+        );
+    }
+
+    #[test]
+    fn test_builtin_combined() {
+        // TODO: Fix by supporting reccursion
+        test_program(
+            "
+        let map = fn(arr, f) {
+            let iter = fn(arr, accumulated) { 
+                if (len(arr) == 0) {
+                    accumulated
+                } else {
+                    iter(rest(arr), push(accumulated, f(first(arr))))
+                } 
+            };
+            iter(arr, []);
+        };
+
+        let a = [1, 2, 3, 4];
+        let double = fn(x) { x * 2 }; 
+        map(a, double);
+        ",
+            "[2, 4, 6, 8]",
+        )
     }
 }

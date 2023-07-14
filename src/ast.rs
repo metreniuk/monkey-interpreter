@@ -45,10 +45,6 @@ impl From<BlockStatement> for Node {
     }
 }
 
-// pub trait Node {
-//     fn get_node(&self) -> Self;
-// }
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Let(LetStatement),
@@ -77,6 +73,8 @@ pub enum Expression {
     Operation(Box<InfixExpression>),
     If(Box<IfExpression>),
     Call(Box<CallExpression>),
+    Array(Box<Array>),
+    PropertyAccess(Box<PropertyAccess>),
 }
 
 impl Display for Expression {
@@ -91,6 +89,8 @@ impl Display for Expression {
             Expression::Operation(x) => write!(f, "{}", x),
             Expression::If(x) => write!(f, "{}", x),
             Expression::Call(x) => write!(f, "{}", x),
+            Expression::Array(x) => write!(f, "{}", x),
+            Expression::PropertyAccess(x) => write!(f, "{}", x),
         }
     }
 }
@@ -226,6 +226,36 @@ impl Display for Program {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct Array {
+    pub elements: Vec<Expression>,
+}
+
+impl Display for Array {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for el in self.elements.iter() {
+            write!(f, "{}", el)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PropertyAccess {
+    pub property: Expression,
+    pub object: Expression,
+}
+
+impl Display for PropertyAccess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.object.clone() {
+            Expression::Ident(t) => write!(f, "{}[{}]", t, self.property),
+            Expression::Array(arr) => write!(f, "{}[{}]", arr, self.property),
+            _ => panic!("object should be identifier or array"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct LetStatement {
     pub name: Identifier,
     pub value: Expression,
@@ -257,12 +287,6 @@ impl Display for Identifier {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct IntegerLiteral(pub Token);
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct BooleanLiteral(pub Token);
-
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Precedence {
     Lowest = 1,
@@ -272,4 +296,5 @@ pub enum Precedence {
     Product = 5,
     Prefix = 6,
     Call = 7,
+    PropertyAccess = 8,
 }
